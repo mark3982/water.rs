@@ -4,6 +4,7 @@ use std::mem::size_of;
 use std::sync::Mutex;
 use std::intrinsics::copy_memory;
 use std::intrinsics::transmute;
+use std::mem::uninitialized;
 
 pub struct RawMessage {
     pub srcsid:     u64,        // source server id
@@ -121,11 +122,52 @@ impl RawMessage {
         }
     }
 
-    pub unsafe fn writestruct<T>(&self, offset: uint, t: T) {
+    pub fn writestructref<T>(&self, offset: uint, t: &T) {
         if offset + size_of::<T>() > self.len {
             panic!("write past end of buffer!")
         }
 
-        copy_memory(self.buf, transmute(&t), size_of::<T>());
+        unsafe { copy_memory((self.buf as uint + offset) as *mut u8, transmute(t), size_of::<T>()); }        
     }
+
+    pub fn writestruct<T>(&self, offset: uint, t: T) {
+        if offset + size_of::<T>() > self.len {
+            panic!("write past end of buffer!")
+        }
+
+        unsafe { copy_memory((self.buf as uint + offset) as *mut u8, transmute(&t), size_of::<T>()); }
+    }
+
+    pub unsafe fn readstruct<T>(&self, offset: uint) -> T {
+        let mut out = uninitialized::<T>();
+
+        if offset + size_of::<T>() > self.len {
+            panic!("read past end of buffer!")
+        }
+
+        copy_memory(&mut out, (self.buf as uint + offset) as *const T, size_of::<T>());
+
+        out
+    }
+
+    pub unsafe fn readstructref<T>(&self, offset: uint, t: &mut T) {
+        if offset + size_of::<T>() > self.len {
+            panic!("read past end of buffer!")
+        }
+
+        copy_memory(t, (self.buf as uint + offset) as *const T, size_of::<T>());
+    }
+
+    pub fn writeu8(&self, offset: uint, value: u8) { self.writestruct(offset, value); }
+    pub fn writeu16(&self, offset: uint, value: u16) { self.writestruct(offset, value); }
+    pub fn writeu32(&self, offset: uint, value: u32) { self.writestruct(offset, value); }
+    pub fn writei8(&self, offset: uint, value: i8) { self.writestruct(offset, value); }
+    pub fn writei16(&self, offset: uint, value: i16) { self.writestruct(offset, value); }
+    pub fn writei32(&self, offset: uint, value: i32) { self.writestruct(offset, value); }
+    pub fn readu8(&self, offset: uint) -> u8 { unsafe { self.readstruct(offset) } }
+    pub fn readu16(&self, offset: uint) -> u16 { unsafe { self.readstruct(offset) } }
+    pub fn readu32(&self, offset: uint) -> u32 { unsafe { self.readstruct(offset) } }
+    pub fn readi8(&self, offset: uint) -> i8 { unsafe { self.readstruct(offset) } }
+    pub fn readi16(&self, offset: uint) -> i16 { unsafe { self.readstruct(offset) } }
+    pub fn readi32(&self, offset: uint) -> i32 { unsafe { self.readstruct(offset) } }
 }

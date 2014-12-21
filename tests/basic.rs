@@ -19,8 +19,9 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     let ep: Endpoint = net.new_endpoint();
     let mut rawmsg: RawMessage;
 
-    loop {
-        sleep(Duration::seconds(1));
+    sleep(Duration::seconds(1));
+
+    for cycle in range(0u, 1000u) {
         // Read anything we can.
         loop { 
             println!("thread[{}] recving", dbgid);
@@ -46,7 +47,8 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     }
 }
 
-fn xmain() {
+#[test]
+fn simpletest() {
     // Create net with ID 234.
     let mut net: Net = Net::new(234);
 
@@ -59,5 +61,4 @@ fn xmain() {
     spawn(move || { funnyworker(netclone, 2); });
 
     println!("main thread done");
-    loop { }
 }

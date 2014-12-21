@@ -213,7 +213,7 @@ impl Net {
                     // Attempt to send to each endpoint. The endpoint
                     // has logic to decide to accept or ignore it.
                     for ep in (*self.i).endpoints.iter_mut() {
-                        if ep.sid == dstid {
+                        if ep.sid == dstsid {
                             if rawmsg.dsteid == 0 || rawmsg.dsteid == ep.eid {
                                 ep.give(&dupedrawmsg);
                             }

@@ -17,7 +17,7 @@ use time::get_time;
 
 use timespec;
 use net::Net;
-use net::NetAddress;
+use net::NetProtocolAddress;
 use rawmessage::RawMessage;
 
 struct Internal {
@@ -27,6 +27,9 @@ struct Internal {
     cwaker:         Condvar,
     wakeupat:       Timespec,
     wakeinprogress: bool,
+    limitpending:   uint,
+    limitmemory:    uint,
+    memoryused:     uint,
 }
 
 pub struct Endpoint {
@@ -83,6 +86,9 @@ impl Endpoint {
             (*i).cwaker = Condvar::new();
             (*i).wakeupat = Timespec { nsec: 0i32, sec: 0x7fffffffffffffffi64 };
             (*i).wakeinprogress = false;
+            (*i).limitpending = 1024; 
+            (*i).limitmemory = 1024 * 1024 * 512;
+            (*i).memoryused = 0;
         }
         
         Endpoint {
@@ -108,6 +114,7 @@ impl Endpoint {
                     // TODO: add limit to prevent memory overflow
                     let lock = (*self.i).lock.lock();
                     (*self.i).messages.push((*msg).clone());
+                    (*self.i).memoryused += msg.cap();
                     // Let us wake anything that is already waiting.
                     self.wakeonewaiter_nolock();
                 }
@@ -144,8 +151,24 @@ impl Endpoint {
         }
     }
 
+    pub fn setlimitpending(&mut self, limit: uint) {
+        unsafe {
+            (*self.i).limitpending = limit;
+        }
+    }
+
+    pub fn setlimitmemory(&mut self, limit: uint) {
+        unsafe {
+            (*self.i).limitmemory = limit;
+        }
+    }
+
     pub fn send(&self, msg: &RawMessage) {
         self.net.send(msg);
+    }
+
+    pub fn sendorblock(&self, msg: &RawMessage) {
+        unimplemented!();
     }
 
     fn neverwakeme_nolock(&self) {
@@ -202,7 +225,11 @@ impl Endpoint {
                 return Result::Err(IoError { kind: IoErrorKind::TimedOut, desc: "No Messages In Buffer", detail: Option::None });
             }
 
-            Result::Ok((*self.i).messages.remove(0).unwrap().dup())
+            let rawmsg = (*self.i).messages.remove(0).unwrap().dup();
+
+            (*self.i).memoryused -= rawmsg.cap();
+
+            Result::Ok(rawmsg)
         }
     }    
 }

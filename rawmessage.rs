@@ -69,6 +69,14 @@ impl RawMessage {
         }
     }
 
+    pub fn cap(&self) -> uint {
+        return self.cap;
+    }
+
+    pub fn len(&self) -> uint {
+        return self.len;
+    }
+
     pub fn dup(&self) -> RawMessage {
         unsafe {
             let refcnt: *mut uint = allocate(size_of::<uint>(), size_of::<uint>()) as *mut uint;

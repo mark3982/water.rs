@@ -164,7 +164,19 @@ impl Net {
 
     } 
 
+    pub fn sendas(&self, rawmsg: &RawMessage, frmsid: u64, frmeid: u64) {
+        let mut duped = rawmsg.dup();
+        duped.srcsid = frmsid;
+        duped.srceid = frmeid;
+        self.send_internal(&duped);
+    }
+
     pub fn send(&self, rawmsg: &RawMessage) {
+        let duped = rawmsg.dup();
+        self.send_internal(&duped);
+    }
+
+    fn send_internal(&self, rawmsg: &RawMessage) {
         match rawmsg.dstsid {
             0 => {
                 // broadcast to everyone
@@ -185,16 +197,12 @@ impl Net {
                     // Lock this because it is shared between
                     // threads and it is *not* thread safe.
                     let lock = (*self.i).lock.lock();
-                    // Make sure we do not share our buffer with
-                    // the caller, since they *likely* may alter
-                    // it by reusing it before we get it sent!
-                    let dupedrawmsg = rawmsg.dup();
                     // Attempt to send to each endpoint. The endpoint
                     // has logic to decide to accept or ignore it.
                     for ep in (*self.i).endpoints.iter_mut() {
                         if ep.sid == self.sid {
                             if rawmsg.dsteid == 0 || rawmsg.dsteid == ep.eid {
-                                ep.give(&dupedrawmsg);
+                                ep.give(rawmsg);
                             }
                         }
                     }
@@ -206,16 +214,12 @@ impl Net {
                     // Lock this because it is shared between
                     // threads and it is *not* thread safe.
                     let lock = (*self.i).lock.lock();
-                    // Make sure we do not share our buffer with
-                    // the caller, since they *likely* may alter
-                    // it by reusing it before we get it sent!
-                    let dupedrawmsg = rawmsg.dup();
                     // Attempt to send to each endpoint. The endpoint
                     // has logic to decide to accept or ignore it.
                     for ep in (*self.i).endpoints.iter_mut() {
                         if ep.sid == dstsid {
                             if rawmsg.dsteid == 0 || rawmsg.dsteid == ep.eid {
-                                ep.give(&dupedrawmsg);
+                                ep.give(rawmsg);
                             }
                         }
                     }

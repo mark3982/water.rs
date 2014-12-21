@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(unused_must_use)]
+#![allow(deprecated)]
 
 extern crate time;
 extern crate water;
@@ -50,7 +51,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
 #[test]
 fn simpletest() {
     // Create net with ID 234.
-    let mut net: Net = Net::new(234);
+    let net: Net = Net::new(234);
 
     // Spawn threads.
     let netclone = net.clone();

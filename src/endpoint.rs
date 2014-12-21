@@ -164,7 +164,7 @@ impl Endpoint {
     }
 
     pub fn send(&self, msg: &RawMessage) {
-        self.net.send(msg);
+        self.net.sendas(msg, self.sid, self.eid);
     }
 
     pub fn sendorblock(&self, msg: &RawMessage) {

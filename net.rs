@@ -169,7 +169,9 @@ impl Net {
                     // threads and it is *not* thread safe.
                     let lock = (*self.i).lock.lock();
                     for ep in (*self.i).endpoints.iter_mut() {
-                        ep.give(rawmsg);
+                        if rawmsg.dsteid == 0 || rawmsg.dsteid == ep.eid {
+                            ep.give(rawmsg);
+                        }
                     }
                 }                
             },
@@ -186,7 +188,11 @@ impl Net {
                     // Attempt to send to each endpoint. The endpoint
                     // has logic to decide to accept or ignore it.
                     for ep in (*self.i).endpoints.iter_mut() {
-                        ep.give(&dupedrawmsg);
+                        if ep.sid == self.sid {
+                            if rawmsg.dsteid == 0 || rawmsg.dsteid == ep.eid {
+                                ep.give(&dupedrawmsg);
+                            }
+                        }
                     }
                 }
             },

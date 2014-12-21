@@ -30,8 +30,8 @@ struct Internal {
 
 pub struct Endpoint {
     i:          *mut Internal,
-    eid:        u64,
-    sid:        u64,
+    pub eid:        u64,
+    pub sid:        u64,
     net:        Net,
 
 }

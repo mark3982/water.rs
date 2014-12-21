@@ -7,22 +7,25 @@ use std::intrinsics::transmute;
 use std::mem::uninitialized;
 
 pub struct RawMessage {
-    pub srcsid:     u64,        // source server id
-    pub srceid:     u64,        // source endpoint id
-    pub dstsid:     u64,        // destination server id
-    pub dsteid:     u64,        // destination endpoint id
-    buf:            *mut u8,    // message buffer
-    len:            uint,       // specified buffer length
-    cap:            uint,       // message buffer length
-    refcnt:         *mut uint,  // reference count
+    pub srcsid:     u64,             // source server id
+    pub srceid:     u64,             // source endpoint id
+    pub dstsid:     u64,             // destination server id
+    pub dsteid:     u64,             // destination endpoint id
+    buf:            *mut u8,         // message buffer
+    len:            uint,            // specified buffer length
+    cap:            uint,            // message buffer length
+    refcnt:         *mut uint,       // reference count
+    lock:           *mut Mutex<bool>,// 
 }
 
 impl Drop for RawMessage {
     fn drop(&mut self) {
-        unsafe {
+        unsafe { 
+            let lock = (*self.lock).lock();
+
             //println!("drop called for {:p} with ref cnt {}", self, *self.refcnt);
             if *self.refcnt < 1 {
-                panic!("drop called for {:p} with reference count {}!", self, *self.refcnt);
+                panic!("drop called for {:p} with reference count {} and buf {}!", self, *self.refcnt, self.buf);
             } 
 
             *self.refcnt = *self.refcnt - 1;
@@ -30,6 +33,9 @@ impl Drop for RawMessage {
             if *self.refcnt < 1 {
                 if self.cap > 0 {
                     deallocate(self.buf, self.cap, size_of::<uint>());
+                    deallocate(self.lock as *mut u8, size_of::<Mutex<bool>>(), size_of::<uint>());
+                    self.buf = 0 as *mut u8;
+                    self.lock = 0 as *mut Mutex<bool>;
                 }
             }
         }
@@ -38,7 +44,8 @@ impl Drop for RawMessage {
 
 impl Clone for RawMessage {
     fn clone(&self) -> RawMessage {
-        
+        let lock = unsafe { (*self.lock).lock() };
+
         unsafe {
             *self.refcnt += 1;
         }
@@ -50,6 +57,7 @@ impl Clone for RawMessage {
             cap: self.cap,
             len: self.len,
             refcnt: self.refcnt,
+            lock: self.lock,
         }
     }
 }
@@ -60,45 +68,45 @@ impl RawMessage {
             let refcnt: *mut uint = allocate(size_of::<uint>(), size_of::<uint>()) as *mut uint;
             *refcnt = 1;
 
+            let lock: *mut Mutex<bool> = allocate(size_of::<Mutex<bool>>(), size_of::<uint>()) as *mut Mutex<bool>;
+            *lock = Mutex::new(false);
+
             RawMessage {
                 srcsid: 0, srceid: 0, dstsid: 0, dsteid: 0,
                 buf: allocate(cap, size_of::<uint>()),
                 len: cap,
                 cap: cap,
                 refcnt: refcnt,
+                lock: lock, 
             }
         }
     }
 
     pub fn cap(&self) -> uint {
+        let lock = unsafe { (*self.lock).lock() };
         return self.cap;
     }
 
     pub fn len(&self) -> uint {
+        let lock = unsafe { (*self.lock).lock() };
         return self.len;
     }
 
     pub fn dup(&self) -> RawMessage {
         unsafe {
-            let refcnt: *mut uint = allocate(size_of::<uint>(), size_of::<uint>()) as *mut uint;
-            *refcnt = 1;
+            let lock = (*self.lock).lock();
 
-            let nbuf: *mut u8 = allocate(self.cap, size_of::<uint>());
-            copy_memory(nbuf, self.buf as *const u8, self.cap);
+            let n = RawMessage::new(self.cap);
+            copy_memory(n.buf, self.buf as *const u8, self.cap);
 
-            RawMessage {
-                srcsid: self.srcsid, srceid: self.srceid,
-                dstsid: self.dstsid, dsteid: self.dsteid,
-                buf: nbuf,
-                cap: self.cap,
-                len: self.len,
-                refcnt: refcnt,
-            }
+            n
         }
     }
 
     pub fn resize(&mut self, newcap: uint) {
         unsafe {
+            let lock = (*self.lock).lock();
+
             if newcap == 0 {
                 return;
             }
@@ -123,6 +131,8 @@ impl RawMessage {
     }
 
     pub fn writestructref<T>(&self, offset: uint, t: &T) {
+        let lock = unsafe { (*self.lock).lock() };
+
         if offset + size_of::<T>() > self.len {
             panic!("write past end of buffer!")
         }
@@ -131,6 +141,8 @@ impl RawMessage {
     }
 
     pub fn writestruct<T>(&self, offset: uint, t: T) {
+        let lock = unsafe { (*self.lock).lock() };
+
         if offset + size_of::<T>() > self.len {
             panic!("write past end of buffer!")
         }

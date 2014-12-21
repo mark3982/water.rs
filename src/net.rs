@@ -38,6 +38,7 @@ pub struct Net {
 impl Drop for Net {
     fn drop(&mut self) {
         unsafe {
+            //println!("net drop for {:p} and {:p}", self, self.i);
             let locked = (*self.i).lock.lock();
             if (*self.i).refcnt == 0 {
                 panic!("drop called with refcnt zero");

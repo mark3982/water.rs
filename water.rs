@@ -5,15 +5,6 @@
 
 extern crate time;
 
-use std::io::{TcpListener, TcpStream};
-use std::cell::RefCell;
-use std::sync::Arc;
-use std::rt::heap::allocate;
-use std::mem::size_of;
-use std::mem::transmute;
-use std::rt::heap::deallocate;
-use std::sync::Mutex;
-
 use net::Net;
 use endpoint::Endpoint;
 use rawmessage::RawMessage;

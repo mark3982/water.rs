@@ -6,16 +6,13 @@ you to create just a local net for communication and join your local net if you
 desire to another remote net either on the same machine or a remote machine across
 a network.
 
-The endpoint is the a reciever and sender of messages and resides on a specific net.
+The endpoint is a reciever and sender of messages and resides on a specific net.
 Each net has an ID and each endpoint has an ID. This means you can address:
 
  * specific endpoint on specific network
  * specific endpoint on all networks
  * any endpoint on a specific network
  * any endpoint on any network
-
-Hopefully, in the future I can implement routing which will allow nets to be connected
-into a graph and messages can be routed between the nets by special endpoints.
 
 Some uses:
 
@@ -88,3 +85,22 @@ An example of synchronous blocking. By default `recv` is asynchrnous. We use `re
         loop { }
     }
 ```
+
+Routing (Communicate With Indirectly Connected Nets)
+===
+
+Hopefully, in the future I can implement routing which will allow nets to be connected
+into a graph and messages can be routed between the nets by special endpoints. At the
+moment to address a net you _must_ be connected to that net. With routing you could have
+the nets look kind of like:
+```
+            netA <----> netB <-----> netC
+                         ^
+                         |
+                         |
+                         |
+                        netD <------> netE
+```
+So routing would allow `netA` to address `netD`, `netC`, and `netE`. This would be done
+by special endpoints that would detect traffic destined for `netE` on `netB` and forward
+this to `netD` would would then forward to `netE` making the circuit complete.

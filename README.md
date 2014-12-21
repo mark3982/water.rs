@@ -1,3 +1,41 @@
+Using
+==
+
+You can use this library three ways. You can use cargo, build manually, or embed into your own code. I recommend
+using Cargo however if you do not use Cargo then you can build it manually, and lastly embedd in your source.
+
+If you are new to Cargo, read http://doc.crates.io/guide.html. The easiest way to use the latest version of
+the `water` lib with Cargo is to add the following line in your `Cargo.toml`:
+    
+    [dependencies.water]
+
+This will cause Cargo to download and setup the water lib which can then be used with `extern crate water`. To
+see an example program check out the section _Asynchronous Send And Synchronous Receive Example_ which you can
+find further down.
+
+An example `Cargo.toml` is:
+    
+    [package]
+    name = "hello"
+    version = "0.0.1"
+    authors = ["My Name"]
+    [dependencies.water]
+
+Your current directory containing `Cargo.toml` should then contain `./src/main.rs` which you can place the example
+code into and then type `cargo build` to produce the program. Also, refer to the Cargo guide! Do not forget to check
+out the sample program a little further down as it shows a basic working example of using the library's most basic
+features.
+
+To build manually (without Cargo) you can just clone this repository and build with `rustc --crate-type rlib ./src/lib.rs -o libwater.rlib`. Then with that library in your current directory you can build your program with `rustc mymain.rs -L .`. If the library is in another directory change `-L <path>` to reflect this. 
+
+_I recommend using Cargo as it makes managing and building dependancies very easy!_
+
+For more examples check out the `tests` directory in the source tree! Each test will demonstrate different parts of the
+library and how to use it. I aim to have everything working and compiling on the master branch. If you want bleeding edge you can select the `dev` branch or any other to find less tester but possibly newer features.
+
+Overview
+==
+
 _This library is missing support for remote nets! However, I will talk about
 it like it has that support so you understand what to expect from it._
 
@@ -64,10 +102,11 @@ Asynchronous Send And Synchronous Receive Example
 An example of synchronous blocking. By default `recv` is asynchrnous. We use `recvorblock`:
 ```
     extern crate time;
+    extern crate water;
 
-    use net::Net;
-    use endpoint::Endpoint;
-    use rawmessage::RawMessage;
+    use water::Net;
+    use water::Endpoint;
+    use water::RawMessage;
 
     use std::io::timer::sleep;
     use std::time::duration::Duration;

@@ -1,5 +1,9 @@
 [package]
 
 name = "water"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["kmcguire <kmcg3413@gmail.com>"]
+description = "A Rust library that provides a thread-safe distributed message sending facility supporting synchronous and asynchronous I/O."
+homepage = "https://github.com/kmcguire3413/water.rs"
+license-file = "LICENSE"
+license = "GPL-3.0"

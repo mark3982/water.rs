@@ -5,63 +5,12 @@
 
 extern crate time;
 
-use net::Net;
-use endpoint::Endpoint;
-use rawmessage::RawMessage;
-
-use std::io::timer::sleep;
-use std::time::duration::Duration;
-use time::Timespec;
+pub use net::Net;
+pub use endpoint::Endpoint;
+pub use rawmessage::RawMessage;
+pub use net::NetProtocolAddress;
 
 mod endpoint;
 mod net;
 mod rawmessage;
 mod timespec;
-
-fn funnyworker(mut net: Net, dbgid: uint) {
-    // Create our endpoint.
-    let ep: Endpoint = net.new_endpoint();
-    let mut rawmsg: RawMessage;
-
-    loop {
-        sleep(Duration::seconds(1));
-        // Read anything we can.
-        loop { 
-            println!("thread[{}] recving", dbgid);
-            let result = ep.recvorblock(Timespec { sec: 1, nsec: 0 });
-            match result {
-                Ok(msg) => {
-                    println!("thread[{}] got message", dbgid);
-                },
-                Err(err) => {
-                    println!("thread[{}] no more messages", dbgid);
-                    break;
-                }
-            }
-        }
-        // Send something random.
-        println!("thread[{}] sending random message", dbgid);
-        {
-            rawmsg = RawMessage::new(32);
-            rawmsg.dstsid = 0;
-            rawmsg.dsteid = 0;
-            ep.send(&rawmsg);
-        }
-    }
-}
-
-fn main() {
-    // Create net with ID 234.
-    let mut net: Net = Net::new(234);
-
-    // Spawn threads.
-    let netclone = net.clone();
-    spawn(move || { funnyworker(netclone, 0); });
-    let netclone = net.clone();
-    spawn(move || { funnyworker(netclone, 1); });
-    let netclone = net.clone();
-    spawn(move || { funnyworker(netclone, 2); });
-
-    println!("main thread done");
-    loop { }
-}

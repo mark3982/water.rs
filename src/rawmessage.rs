@@ -2,9 +2,10 @@ use std::rt::heap::allocate;
 use std::rt::heap::deallocate;
 use std::mem::size_of;
 use std::sync::Mutex;
-use std::intrinsics::copy_memory;
 use std::intrinsics::transmute;
+use std::mem::transmute_copy;
 use std::mem::uninitialized;
+use std::intrinsics::copy_memory;
 
 pub struct RawMessage {
     pub srcsid:     u64,             // source server id
@@ -151,13 +152,17 @@ impl RawMessage {
     }
 
     pub unsafe fn readstruct<T>(&self, offset: uint) -> T {
-        let mut out = uninitialized::<T>();
+        let mut out: T = uninitialized::<T>();
 
         if offset + size_of::<T>() > self.len {
             panic!("read past end of buffer!")
         }
 
-        copy_memory(&mut out, (self.buf as uint + offset) as *const T, size_of::<T>());
+        // Yeah, I had a little brain fart and things got out of hand here. I think
+        // copy_memory's count argument is the multiple of size_of::<T>. So I ended
+        // up doing u8, but maybe one day make this look more pretty.
+        let ptr: *mut u8 = transmute_copy(&&out);
+        copy_memory(ptr, (self.buf as uint + offset) as *const u8, size_of::<T>());
 
         out
     }

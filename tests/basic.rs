@@ -56,9 +56,10 @@ fn funnyworker(mut net: Net, dbgid: uint) {
             match result {
                 Ok(msg) => {
                     println!("reading message now");
-                    //let safestruct: SafeStructure = unsafe { msg.readstruct(0) };
-                    //assert!(safestruct.a != safestruct.b as u64);
-                    //assert!(safestruct.c == 0x12);
+                    let safestruct: SafeStructure = unsafe { msg.readstruct(0) };
+                    println!("asserting on message");
+                    assert!(safestruct.a == safestruct.b as u64);
+                    assert!(safestruct.c == 0x12);
                     println!("thread[{}] got message", dbgid);
                     recvmsgcnt += 1;
                 },
@@ -125,14 +126,14 @@ fn simpletest() {
         let result = ep.recvorblock(Timespec { sec: 1, nsec: 0 });
         match result {
             Ok(msg) => {
-                //let safestruct: SafeStructure = unsafe { msg.readstruct(0) };
-                //if safestruct.a == safestruct.b as u64 && safestruct.b as u64 == safestruct.c as u64 {
-                //    println!("got finished!");
-                //    completedcnt += 1;
-                //    if completedcnt > 2 {
-                //        break;
-                //    }
-                //}
+                let safestruct: SafeStructure = unsafe { msg.readstruct(0) };
+                if safestruct.a == safestruct.b as u64 && safestruct.b as u64 == safestruct.c as u64 {
+                    println!("got finished!");
+                    completedcnt += 1;
+                    if completedcnt > 2 {
+                        break;
+                    }
+                }
             },
             Err(err) => {
                 continue;

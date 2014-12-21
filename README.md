@@ -25,6 +25,42 @@ Some advantages:
  * simple and easy to manage a single endpoint than multiple channels since you can send and recieve to multiple endpoints (threads) from a single endpoint
  * easy to segment loads by creating a separate network
 
+Some disadvantages:
+
+ * more attention must be paid not to overload a network depending on your usage
+ * asynchronous send (default) overload can result in excess memory usage and limits can
+   cause lost messages
+
+Asynchronous Versus Synchronous
+===
+
+The `recv` and `send` calls are asynchronous and will not block but can fail. The failure is actually
+a feature. The `send` can have a partial failure where certain endpoints were not able to recieve because
+there message queue reached it's limit. A queue reaching its limits can be caused by the endpoint not being
+read enough or an overload situation in which it is impossible to read it fast enough which depends entirely
+on the situation.
+
+The `recvorblock` and `sendorblock` calls are synchronous and will block until success or timeout. The 
+`sendorblock` call can partially fail if a timeout is reached and one or more endpoints may not have
+recieved the message because of their queues reaching limits.
+
+Limits
+===
+
+A limit is specified to prevent memory system exhaustion which would eventually happen and result in
+run away memory usage that could leave the system unstable and unusable. To prevent this all endpoints
+have a default limit which may or may not be ideal for your application. You are encouraged to adjust
+this limit to your needs with `setlimitpending` where the value represents the maximum number of pending
+messages. This maximum number is not related to the memory consumed by the messages. To limit based on
+memory used in the incoming queue for each endpoint you should use `setlimitmemory`. The memory limit
+is a little misleading as message data is actually shared between endpoints. So a one megabyte message
+does not consume two megabyte for two endpoints but rather one megabyte plus roughly thirty-two bytes
+for each endpoint who recieves the message.
+
+
+Asynchronous Send And Synchronous Receive Example
+==
+
 An example of synchronous blocking. By default `recv` is asynchrnous. We use `recvorblock`:
 ```
     extern crate time;

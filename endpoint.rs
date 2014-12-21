@@ -47,7 +47,6 @@ impl Drop for Endpoint {
             (*self.i).refcnt -= 1;
             if (*self.i).refcnt == 0 {
                 deallocate(self.i as *mut u8, size_of::<Internal>(), size_of::<uint>());
-                println!("DEALLOCATED");
             }
         }
     }
@@ -102,15 +101,13 @@ impl Endpoint {
     pub fn give(&mut self, msg: &RawMessage) {
         unsafe {
             // only if it is addressed to us or to anyone
-            println!("checking for storage");
             if self.eid == msg.dsteid || msg.dsteid == 0 {
                 if self.sid == msg.dstsid || msg.dstsid == 0 {
                     // TODO: add limit to prevent memory overflow
                     let lock = (*self.i).lock.lock();
                     (*self.i).messages.push((*msg).clone());
                     // Let us wake anything that is already waiting.
-                    self.wakeonewaiter();
-                    println!("stored message");
+                    self.wakeonewaiter_nolock();
                 }
             }
         }
@@ -135,8 +132,21 @@ impl Endpoint {
         }
     }
 
+    fn wakeonewaiter_nolock(&self) {
+        unsafe {
+            (*self.i).cwaker.notify_one();
+        }
+    }
+
     pub fn send(&self, msg: &RawMessage) {
         self.net.send(msg);
+    }
+
+    pub fn neverwakeme(&self) {
+        unsafe {
+            let lock = (*self.i).lock.lock();
+            (*self.i).wakeupat = Timespec { nsec: !0i32, sec: !0i64 };
+        }
     }
 
     pub fn recvorblock(&self, duration: Timespec) -> IoResult<RawMessage> {
@@ -163,6 +173,10 @@ impl Endpoint {
                     return Result::Err(IoError { kind: IoErrorKind::TimedOut, desc: "Timed Out", detail: Option::None })
                 }
             }
+
+            // If another thread was sleeping too it will wake
+            // after we return and it will set the wake value.
+            self.neverwakeme();
 
             self.recv_nolock()
         }

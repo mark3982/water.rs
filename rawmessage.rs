@@ -19,8 +19,9 @@ pub struct RawMessage {
 impl Drop for RawMessage {
     fn drop(&mut self) {
         unsafe {
+            //println!("drop called for {:p} with ref cnt {}", self, *self.refcnt);
             if *self.refcnt < 1 {
-                panic!("drop called with reference count zero!");
+                panic!("drop called for {:p} with reference count {}!", self, *self.refcnt);
             } 
 
             *self.refcnt = *self.refcnt - 1;
@@ -36,6 +37,11 @@ impl Drop for RawMessage {
 
 impl Clone for RawMessage {
     fn clone(&self) -> RawMessage {
+        
+        unsafe {
+            *self.refcnt += 1;
+        }
+
         RawMessage {
             srcsid: self.srcsid, srceid: self.srceid,
             dstsid: self.dstsid, dsteid: self.dsteid,

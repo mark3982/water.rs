@@ -13,6 +13,9 @@ use std::intrinsics::transmute;
 use std::io::timer::sleep;
 use std::time::duration::Duration;
 
+use time::get_time;
+use time::Timespec;
+
 use rawmessage::RawMessage;
 use endpoint::Endpoint;
 
@@ -51,7 +54,6 @@ impl Drop for Net {
             (*self.i).refcnt -= 1;
             if (*self.i).refcnt == 0 {
                 deallocate(self.i as *mut u8, size_of::<Internal>(), size_of::<uint>());
-                println!("DEALLOCATED");
             }
         }
     }
@@ -93,6 +95,7 @@ impl Net {
 
         loop {
             sleep(Duration::microseconds(latency));
+            let ctime: Timespec = get_time();
             {
                 let lock = unsafe { (*net.i).lock.lock() };
                 wokesomeone = false;
@@ -102,18 +105,18 @@ impl Net {
                         wokesomeone = true;
                     }
                 }
-
-                // TODO: no overflow check
-                if wokesomeone {
-                    latency = latency / 2;
-                    if latency < NET_MINLATENCY {
-                        latency = NET_MINLATENCY;
-                    }
-                } else {
-                    latency = latency * 2;
-                    if latency > NET_MAXLATENCY {
-                        latency = NET_MAXLATENCY;
-                    }
+            }
+            // Do dynamic adjustment of latency and CPU usage.
+            // TODO: overflow check.. maybe?
+            if wokesomeone {
+                latency = latency / 2;
+                if latency < NET_MINLATENCY {
+                    latency = NET_MINLATENCY;
+                }
+            } else {
+                latency = latency * 2;
+                if latency > NET_MAXLATENCY {
+                    latency = NET_MAXLATENCY;
                 }
             }
         }
@@ -201,19 +204,35 @@ impl Net {
                 (*self.i).hueid = eid + 1;
             }
 
-            Endpoint::new(self.sid, eid, self.clone_nolock())
+            let ep = Endpoint::new(self.sid, eid, self.clone_nolock());
+
+            (*self.i).endpoints.push(ep.clone());
+
+            ep
         }
     }
 
     pub fn new_endpoint(&mut self) -> Endpoint {
         unsafe {
-            println!("at lock");
-            let lock = (*self.i).lock.lock();
-            println!("after lock");
+            let ep: Endpoint;
+            {
+                let lock = (*self.i).lock.lock();
 
-            let ep = Endpoint::new(self.sid, (*self.i).hueid, self.clone_nolock());
+                ep = Endpoint::new(self.sid, (*self.i).hueid, self.clone_nolock());
 
-            (*self.i).hueid += 1;
+                (*self.i).hueid += 1;
+            }
+
+            // Well, we can not clone the Endpoint while holding the
+            // Net lock because the endpoint will clone the Net which
+            // will try to reacquire the non-re-entrant lock. So we unlock
+            // do the clone, then re-lock and add it.
+            let epcloned = ep.clone();
+
+            {
+                let lock = (*self.i).lock.lock();
+                (*self.i).endpoints.push(epcloned);
+            }
 
             ep
         }

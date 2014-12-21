@@ -86,8 +86,10 @@ An example of synchronous blocking. By default `recv` is asynchrnous. We use `re
     }
 ```
 
-Routing (Communicate With Indirectly Connected Nets)
+Routing 
 ===
+
+_At the moment you can only communicate with a directly connected net.._
 
 Hopefully, in the future I can implement routing which will allow nets to be connected
 into a graph and messages can be routed between the nets by special endpoints. At the
@@ -104,3 +106,17 @@ the nets look kind of like:
 So routing would allow `netA` to address `netD`, `netC`, and `netE`. This would be done
 by special endpoints that would detect traffic destined for `netE` on `netB` and forward
 this to `netD` would would then forward to `netE` making the circuit complete.
+
+_With out routing `netA` would have to directly be connected to `netE` or any other net
+that it wishes to address._
+
+Threads And Memory
+===
+
+Currently, for `recvorblock` support one thread is spawned per net. Also, per TCP link
+two threads are spawned where one handles sending and the other recieving. This adds
+overhead and I may at some point in time reduce the number of TCP link threads to one
+by making the sending thread try to actually perform the send. Also memory consumption
+is not a large concern even though each endpoint stores messages because the actual
+message data is shared by using `clone` on each message. When the message is pulled out
+of the endpoint the message is `dup`ed.

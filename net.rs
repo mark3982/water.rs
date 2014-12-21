@@ -19,16 +19,8 @@ use time::Timespec;
 use rawmessage::RawMessage;
 use endpoint::Endpoint;
 
-pub enum NetExternalAddress {
+pub enum NetProtocolAddress {
     TCP(String, u16)
-}
-
-pub enum NetAddress {
-    Everyone,
-    GlobalSingle(u64),
-    ServerSingle(u64, u64),
-    GlobalGroup(u64),
-    ServerGroup(u64, u64),
 }
 
 struct Internal {
@@ -158,7 +150,18 @@ impl Net {
         }
     }
 
-    pub fn connect(&self, addr: NetExternalAddress) {
+    // Listens for and accepts TCP connections from remote
+    // networks and performs simple routing between the two
+    // networks.
+    pub fn tcplisten(&self, addr: NetProtocolAddress){
+
+    }
+
+    // Tries to maintain a TCP connecton to the specified remote
+    // network and performs simple routing between the two 
+    // networks.
+    pub fn tcpconnect(&self, addr: NetProtocolAddress) {
+
     } 
 
     pub fn send(&self, rawmsg: &RawMessage) {
@@ -197,8 +200,26 @@ impl Net {
                     }
                 }
             },
-            _ => {
+            dstsid => {
                 // specific server
+                unsafe {
+                    // Lock this because it is shared between
+                    // threads and it is *not* thread safe.
+                    let lock = (*self.i).lock.lock();
+                    // Make sure we do not share our buffer with
+                    // the caller, since they *likely* may alter
+                    // it by reusing it before we get it sent!
+                    let dupedrawmsg = rawmsg.dup();
+                    // Attempt to send to each endpoint. The endpoint
+                    // has logic to decide to accept or ignore it.
+                    for ep in (*self.i).endpoints.iter_mut() {
+                        if ep.sid == dstid {
+                            if rawmsg.dsteid == 0 || rawmsg.dsteid == ep.eid {
+                                ep.give(&dupedrawmsg);
+                            }
+                        }
+                    }
+                }                
             }
         }
     }

@@ -202,7 +202,7 @@ impl Endpoint {
                 return Result::Err(IoError { kind: IoErrorKind::TimedOut, desc: "No Messages In Buffer", detail: Option::None });
             }
 
-            Result::Ok((*self.i).messages.remove(0).unwrap())
+            Result::Ok((*self.i).messages.remove(0).unwrap().dup())
         }
     }    
 }

@@ -101,8 +101,9 @@ impl Net {
                 wokesomeone = false;
                 for ep in unsafe { (*net.i).endpoints.iter_mut() } {
                     if ctime > ep.getwaketime() {
-                        ep.wakeonewaiter();
-                        wokesomeone = true;
+                        if ep.wakeonewaiter() {
+                            wokesomeone = true;
+                        }
                     }
                 }
             }

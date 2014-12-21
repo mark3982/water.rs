@@ -26,6 +26,7 @@ struct Internal {
     messages:       Vec<RawMessage>,
     cwaker:         Condvar,
     wakeupat:       Timespec,
+    wakeinprogress: bool,
 }
 
 pub struct Endpoint {
@@ -80,7 +81,8 @@ impl Endpoint {
             (*i).refcnt = 1;
             (*i).messages = Vec::new();
             (*i).cwaker = Condvar::new();
-            (*i).wakeupat = Timespec { nsec: !0i32, sec: !0i64 };
+            (*i).wakeupat = Timespec { nsec: 0i32, sec: 0x7fffffffffffffffi64 };
+            (*i).wakeinprogress = false;
         }
         
         Endpoint {
@@ -124,11 +126,15 @@ impl Endpoint {
     }
 
     // Wake one thread waiting on this endpoint.
-    pub fn wakeonewaiter(&self) {
+    pub fn wakeonewaiter(&self) -> bool {
         unsafe {
-            //let clock = (*self.i).mwaker.lock.lock();
             let lock = (*self.i).lock.lock();
-            (*self.i).cwaker.notify_one();
+            if !(*self.i).wakeinprogress {
+                (*self.i).cwaker.notify_all();
+                (*self.i).wakeinprogress = true;
+                return true;
+            }
+            false
         }
     }
 
@@ -142,10 +148,9 @@ impl Endpoint {
         self.net.send(msg);
     }
 
-    pub fn neverwakeme(&self) {
+    fn neverwakeme_nolock(&self) {
         unsafe {
-            let lock = (*self.i).lock.lock();
-            (*self.i).wakeupat = Timespec { nsec: !0i32, sec: !0i64 };
+            (*self.i).wakeupat = Timespec { sec: 0x7fffffffffffffffi64, nsec: 0i32 };
         }
     }
 
@@ -156,6 +161,7 @@ impl Endpoint {
 
         unsafe {
             let lock = (*self.i).lock.lock();
+
             while (*self.i).messages.len() < 1 {
                 // The wakeup thread will wake everyone up at or beyond
                 // this specified time. Then anyone who needs to sleep
@@ -176,7 +182,8 @@ impl Endpoint {
 
             // If another thread was sleeping too it will wake
             // after we return and it will set the wake value.
-            self.neverwakeme();
+            self.neverwakeme_nolock();
+            (*self.i).wakeinprogress = false;
 
             self.recv_nolock()
         }

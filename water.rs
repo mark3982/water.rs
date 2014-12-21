@@ -20,6 +20,7 @@ use rawmessage::RawMessage;
 
 use std::io::timer::sleep;
 use std::time::duration::Duration;
+use time::Timespec;
 
 mod endpoint;
 mod net;
@@ -35,7 +36,8 @@ fn funnyworker(mut net: Net, dbgid: uint) {
         sleep(Duration::seconds(1));
         // Read anything we can.
         loop { 
-            let result = ep.recv();
+            println!("thread[{}] recving", dbgid);
+            let result = ep.recvorblock(Timespec { sec: 1, nsec: 0 });
             match result {
                 Ok(msg) => {
                     println!("thread[{}] got message", dbgid);

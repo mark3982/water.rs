@@ -9,11 +9,13 @@ extern crate time;
 pub use net::Net;
 pub use endpoint::Endpoint;
 pub use rawmessage::RawMessage;
-pub use net::NetProtocolAddress;
 pub use rawmessage::NoPointers;
+pub use message::MessagePayload;
+pub use message::Message;
 
 mod endpoint;
 mod net;
 mod rawmessage;
 mod timespec;
 mod tcp;
+mod message;

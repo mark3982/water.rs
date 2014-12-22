@@ -11,6 +11,8 @@ use water::Net;
 use water::Endpoint;
 use water::RawMessage;
 use water::NoPointers;
+use water::MessagePayload;
+use water::Message;
 
 use std::io::timer::sleep;
 use std::time::duration::Duration;
@@ -40,7 +42,6 @@ impl NoPointers for SafeStructure {}
 fn funnyworker(mut net: Net, dbgid: uint) {
     // Create our endpoint.
     let ep: Endpoint = net.new_endpoint();
-    let mut rawmsg: RawMessage;
 
     sleep(Duration::seconds(1));
 
@@ -53,7 +54,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     // once it is passed to the I/O sub-system in water it is 
     // duplication to prevent you from changing a packet before it
     // gets completely sent.
-    rawmsg = RawMessage::new(32);
+    let mut msgtosend = Message::new_raw(32);
 
     while recvmsgcnt < 1001u32 {
         // Read anything we can.
@@ -63,13 +64,20 @@ fn funnyworker(mut net: Net, dbgid: uint) {
             match result {
                 Ok(msg) => {
                     println!("reading message now");
-                    let safestruct: SafeStructure = msg.readstruct(0);
-                    println!("asserting on message");
-                    if safestruct.a != 0x10 {
-                        assert!(safestruct.a == safestruct.b as u64);
-                        assert!(safestruct.c == 0x12);
-                        println!("thread[{}] got message", dbgid);
-                        recvmsgcnt += 1;
+                    match msg.payload {
+                        MessagePayload::Raw(payload) => {
+                            let safestruct: SafeStructure = payload.readstruct(0);
+                            println!("asserting on message");
+                            if safestruct.a != 0x10 {
+                                assert!(safestruct.a == safestruct.b as u64);
+                                assert!(safestruct.c == 0x12);
+                                println!("thread[{}] got message", dbgid);
+                                recvmsgcnt += 1;
+                            }
+                        },
+                        _ => {
+                            panic!("unexpected message type");
+                        }
                     }
                 },
                 Err(err) => {
@@ -82,33 +90,41 @@ fn funnyworker(mut net: Net, dbgid: uint) {
         // Send something random.
         println!("thread[{}] sending random message", dbgid);
         if sentmsgcnt < 1000u32 {
-            rawmsg.dstsid = 0;
-            rawmsg.dsteid = 0;
-            let safestruct = SafeStructure {
-                a:  0x12345678,
-                b:  0x12345678,
-                c:  0x12,
-            };
-            // This will move the value meaning you can not use it afterwards, but
-            // it should be optimized into a pointer so there is no performance
-            // difference.
-            // rawmsg.writestruct(0, safestruct);
-            // This will copy the value using a reference into the message.
-            rawmsg.writestructref(0, &safestruct);
+            msgtosend.dstsid = 0;
+            msgtosend.dsteid = 0;
+            {
+                let rawmsg = msgtosend.get_rawref();
 
-            ep.send(&rawmsg);
+                let safestruct = SafeStructure {
+                    a:  0x12345678,
+                    b:  0x12345678,
+                    c:  0x12,
+                };
+                // This will move the value meaning you can not use it afterwards, but
+                // it should be optimized into a pointer so there is no performance
+                // difference.
+                // rawmsg.writestruct(0, safestruct);
+                // This will copy the value using a reference into the message.
+                rawmsg.writestructref(0, &safestruct);
+            }
+
+            ep.send(&msgtosend);
             sentmsgcnt += 1;
         }
     }
 
-    let safestruct = SafeStructure {
-        a:  0x10,
-        b:  0x10,
-        c:  0x10,
-    };
+    {
+        let rawmsg = msgtosend.get_rawref();
 
-    rawmsg.writestructref(0, &safestruct);
-    ep.send(&rawmsg);
+        let safestruct = SafeStructure {
+            a:  0x10,
+            b:  0x10,
+            c:  0x10,
+        };
+
+        rawmsg.writestructref(0, &safestruct);
+    }
+    ep.send(&msgtosend);
 
     println!("thread[{}]: exiting", dbgid);
 }
@@ -146,12 +162,21 @@ fn basicio() {
         let result = ep.recvorblock(Timespec { sec: 1, nsec: 0 });
         match result {
             Ok(msg) => {
-                let safestruct: SafeStructure = msg.readstruct(0);
-                if safestruct.a == safestruct.b as u64 && safestruct.b as u64 == safestruct.c as u64 {
-                    println!("got finished!");
-                    completedcnt += 1;
-                    if completedcnt > 2 {
-                        break;
+                println!("reading message now");
+                match msg.payload {
+                    MessagePayload::Raw(payload) => {
+                        let safestruct: SafeStructure = payload.readstruct(0);
+                        println!("asserting on message");
+                        if safestruct.a == 0x10 {
+                            println!("got finished");
+                            completedcnt += 1;
+                            if completedcnt > 2 {
+                                break;
+                            }
+                        }
+                    },
+                    _ => {
+                        panic!("unexpected message type");
                     }
                 }
             },

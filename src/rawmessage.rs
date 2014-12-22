@@ -14,10 +14,6 @@ use std::intrinsics::copy_memory;
 pub trait NoPointers { }
 
 pub struct RawMessage {
-    pub srcsid:     u64,             // source server id
-    pub srceid:     u64,             // source endpoint id
-    pub dstsid:     u64,             // destination server id
-    pub dsteid:     u64,             // destination endpoint id
     buf:            *mut u8,         // message buffer
     len:            uint,            // specified buffer length
     cap:            uint,            // message buffer length
@@ -58,8 +54,6 @@ impl Clone for RawMessage {
         }
 
         RawMessage {
-            srcsid: self.srcsid, srceid: self.srceid,
-            dstsid: self.dstsid, dsteid: self.dsteid,
             buf: self.buf,
             cap: self.cap,
             len: self.len,
@@ -79,7 +73,6 @@ impl RawMessage {
             *lock = Mutex::new(false);
 
             RawMessage {
-                srcsid: 0, srceid: 0, dstsid: 0, dsteid: 0,
                 buf: allocate(cap, size_of::<uint>()),
                 len: cap,
                 cap: cap,
@@ -169,6 +162,10 @@ impl RawMessage {
         unsafe { self.readstructunsafe(offset) }
     }
 
+    pub fn readstructref<T: NoPointers>(&self, offset: uint, t: &mut T) {
+        unsafe { self.readstructunsaferef(offset, t) };
+    }
+
     pub unsafe fn readstructunsafe<T>(&self, offset: uint) -> T {
         let mut out: T = uninitialized::<T>();
 
@@ -185,7 +182,7 @@ impl RawMessage {
         out
     }
 
-    pub unsafe fn readstructref<T>(&self, offset: uint, t: &mut T) {
+    pub unsafe fn readstructunsaferef<T>(&self, offset: uint, t: &mut T) {
         if offset + size_of::<T>() > self.len {
             panic!("read past end of buffer!")
         }

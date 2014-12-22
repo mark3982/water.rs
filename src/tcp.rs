@@ -3,7 +3,6 @@ use std::sync::Mutex;
 use std::intrinsics::transmute;
 
 use net::Net;
-use net::NetProtocolAddress;
 
 pub type TCPLISTENER = Arc<RacyCell<TCPListener>>;
 pub type TCPCONNECTOR = Arc<RacyCell<TCPConnector>>;

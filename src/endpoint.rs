@@ -11,19 +11,22 @@ use std::io::IoResult;
 use std::io::IoError;
 use std::io::IoErrorKind;
 use std::time::duration::Duration;
+use std::mem::transmute_copy;
+use std::mem::uninitialized;
+use std::intrinsics::copy_memory;
 
 use time::Timespec;
 use time::get_time;
 
 use timespec;
 use net::Net;
-use net::NetProtocolAddress;
 use rawmessage::RawMessage;
+use message::Message;
 
 struct Internal {
     lock:           Mutex<uint>,
     refcnt:         uint,
-    messages:       Vec<RawMessage>,
+    messages:       Vec<Message>,
     cwaker:         Condvar,
     wakeupat:       Timespec,
     wakeinprogress: bool,
@@ -43,15 +46,43 @@ pub struct Endpoint {
 impl Drop for Endpoint {
     fn drop(&mut self) {
         unsafe {
-            let locked = (*self.i).lock.lock();
-            if (*self.i).refcnt == 0 {
-                panic!("drop called with refcnt zero");
+            let mut dealloc: bool = false;
+
+            {
+                println!("locking mutex {}", self.i);
+                let locked = (*self.i).lock.lock();
+                println!("mutex locked");
+
+                if (*self.i).refcnt == 0 {
+                    panic!("drop called with refcnt zero");
+                }
+                
+                (*self.i).refcnt -= 1;
+                if (*self.i).refcnt == 0 {
+                    dealloc = true;
+                }
+
+                println!("unlocking mutex");
             }
-            
-            (*self.i).refcnt -= 1;
-            if (*self.i).refcnt == 0 {
+            println!("mutex unlocked");
+
+            // We can not deallocate the mutex because once `locked` drops out of
+            // scope it may access the memory supporting the type therefore we must
+            // first unlock the mutex then deallocate. We can be sure we do not need
+            // a mutex, because obviously we were the last user of it.
+            if dealloc {
+                println!("endpoint deallocting!");
+
+                // Force proper drop calls to happen.
+                let i: Internal = uninitialized();
+                let p: *mut u8 = transmute_copy(&&i);
+                copy_memory(p, self.i as *mut u8, size_of::<Internal>());
+                drop(i);
+
                 deallocate(self.i as *mut u8, size_of::<Internal>(), size_of::<uint>());
+                println!("endpoint deallocated!");
             }
+            println!("total exit");
         }
     }
 }
@@ -106,7 +137,17 @@ impl Endpoint {
         }
     }
 
-    pub fn give(&mut self, msg: &RawMessage) {
+    pub fn givesync(&mut self, msg: Message) {
+        unsafe {
+            let lock = (*self.i).lock.lock();
+            (*self.i).memoryused += msg.cap();
+            (*self.i).messages.push(msg);
+            // Let us wake anything that is already waiting.
+            self.wakeonewaiter_nolock();            
+        }
+    }
+
+    pub fn give(&mut self, msg: &Message) {
         unsafe {
             // only if it is addressed to us or to anyone
             if self.eid == msg.dsteid || msg.dsteid == 0 {
@@ -163,11 +204,15 @@ impl Endpoint {
         }
     }
 
-    pub fn send(&self, msg: &RawMessage) {
+    pub fn send(&self, msg: &Message) {
         self.net.sendas(msg, self.sid, self.eid);
     }
 
-    pub fn sendorblock(&self, msg: &RawMessage) {
+    pub fn sendsync(&self, msg: Message) {
+        self.net.sendsyncas(msg, self.sid, self.eid);
+    }
+
+    pub fn sendorblock(&self, msg: &Message) {
         unimplemented!();
     }
 
@@ -177,7 +222,7 @@ impl Endpoint {
         }
     }
 
-    pub fn recvorblock(&self, duration: Timespec) -> IoResult<RawMessage> {
+    pub fn recvorblock(&self, duration: Timespec) -> IoResult<Message> {
         let mut when: Timespec = get_time();
 
         when = timespec::add(when, duration);
@@ -212,14 +257,14 @@ impl Endpoint {
         }
     }
     
-    pub fn recv(&self) -> IoResult<RawMessage> {
+    pub fn recv(&self) -> IoResult<Message> {
         unsafe {
             let lock = (*self.i).lock.lock();
             self.recv_nolock()
         }
     }
 
-    pub fn recv_nolock(&self) -> IoResult<RawMessage> {
+    pub fn recv_nolock(&self) -> IoResult<Message> {
         unsafe {
             if (*self.i).messages.len() < 1 {
                 return Result::Err(IoError { kind: IoErrorKind::TimedOut, desc: "No Messages In Buffer", detail: Option::None });

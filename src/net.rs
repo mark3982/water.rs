@@ -18,15 +18,13 @@ use time::Timespec;
 
 use rawmessage::RawMessage;
 use endpoint::Endpoint;
+use message::Message;
+use message::MessagePayload;
 
 use tcp::TCPLISTENER;
 use tcp::TCPListener;
 use tcp::TCPCONNECTOR;
 use tcp::TCPConnector;
-
-pub enum NetProtocolAddress {
-    TCP(String, u16)
-}
 
 struct Internal {
     lock:           Mutex<uint>,
@@ -170,19 +168,58 @@ impl Net {
         TCPConnector::new(self, host, port)
     } 
 
-    pub fn sendas(&self, rawmsg: &RawMessage, frmsid: u64, frmeid: u64) {
+    pub fn sendas(&self, rawmsg: &Message, frmsid: u64, frmeid: u64) {
         let mut duped = rawmsg.dup();
         duped.srcsid = frmsid;
         duped.srceid = frmeid;
         self.send_internal(&duped);
     }
 
-    pub fn send(&self, rawmsg: &RawMessage) {
-        let duped = rawmsg.dup();
+    pub fn send(&self, msg: &Message) {
+        match msg.payload {
+            MessagePayload::Sync(ref payload) => {
+                panic!("use `sendsync` instead of `send` for sync messages");
+            }
+            _ => {
+            }
+        }
+
+        let duped = msg.dup();
         self.send_internal(&duped);
     }
 
-    fn send_internal(&self, rawmsg: &RawMessage) {
+    pub fn sendsyncas(&self, mut msg: Message, frmsid: u64, frmeid: u64) {
+        msg.srcsid = frmsid;
+        msg.srceid = frmeid;
+        self.sendsync(msg);
+    }
+
+    // A sync type message needs to be consumed because it
+    // can not be duplicated. It also needs special routing
+    // to handle sending it only to the local net which should
+    // have only threads running in this same process.
+    pub fn sendsync(&self, msg: Message) {
+        if msg.dstsid != 1 && msg.dstsid != self.sid {
+            panic!("you can only send sync message to local net!")
+        }
+
+        if msg.dsteid == 0 {
+            panic!("you can only send sync message to a single endpoint!");
+        }
+
+        // Find who we need to send the message to, and only them.
+        unsafe {
+            let lock = (*self.i).lock.lock();
+            for ep in (*self.i).endpoints.iter_mut() {
+                if msg.dsteid == ep.eid {
+                    ep.givesync(msg);
+                    return;
+                }
+            }
+        }
+    }
+
+    fn send_internal(&self, rawmsg: &Message) {
         match rawmsg.dstsid {
             0 => {
                 // broadcast to everyone

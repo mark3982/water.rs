@@ -7,6 +7,12 @@ use std::mem::transmute_copy;
 use std::mem::uninitialized;
 use std::intrinsics::copy_memory;
 
+// This is used to signify that a type is safe to
+// be written and read from a RawMessage across
+// process and machine boundaries. This trait can
+// create dangerous code.
+pub trait NoPointers { }
+
 pub struct RawMessage {
     pub srcsid:     u64,             // source server id
     pub srceid:     u64,             // source endpoint id
@@ -139,7 +145,7 @@ impl RawMessage {
         }
     }
 
-    pub fn writestructref<T>(&self, offset: uint, t: &T) {
+    pub fn writestructref<T>(&mut self, offset: uint, t: &T) {
         let lock = unsafe { (*self.lock).lock() };
 
         if offset + size_of::<T>() > self.len {
@@ -149,7 +155,7 @@ impl RawMessage {
         unsafe { copy_memory((self.buf as uint + offset) as *mut u8, transmute(t), size_of::<T>()); }        
     }
 
-    pub fn writestruct<T>(&self, offset: uint, t: T) {
+    pub fn writestruct<T>(&mut self, offset: uint, t: T) {
         let lock = unsafe { (*self.lock).lock() };
 
         if offset + size_of::<T>() > self.len {
@@ -159,7 +165,11 @@ impl RawMessage {
         unsafe { copy_memory((self.buf as uint + offset) as *mut u8, transmute(&t), size_of::<T>()); }
     }
 
-    pub unsafe fn readstruct<T>(&self, offset: uint) -> T {
+    pub fn readstruct<T: NoPointers>(&self, offset: uint) -> T {
+        unsafe { self.readstructunsafe(offset) }
+    }
+
+    pub unsafe fn readstructunsafe<T>(&self, offset: uint) -> T {
         let mut out: T = uninitialized::<T>();
 
         if offset + size_of::<T>() > self.len {
@@ -183,16 +193,16 @@ impl RawMessage {
         copy_memory(t, (self.buf as uint + offset) as *const T, size_of::<T>());
     }
 
-    pub fn writeu8(&self, offset: uint, value: u8) { self.writestruct(offset, value); }
-    pub fn writeu16(&self, offset: uint, value: u16) { self.writestruct(offset, value); }
-    pub fn writeu32(&self, offset: uint, value: u32) { self.writestruct(offset, value); }
-    pub fn writei8(&self, offset: uint, value: i8) { self.writestruct(offset, value); }
-    pub fn writei16(&self, offset: uint, value: i16) { self.writestruct(offset, value); }
-    pub fn writei32(&self, offset: uint, value: i32) { self.writestruct(offset, value); }
-    pub fn readu8(&self, offset: uint) -> u8 { unsafe { self.readstruct(offset) } }
-    pub fn readu16(&self, offset: uint) -> u16 { unsafe { self.readstruct(offset) } }
-    pub fn readu32(&self, offset: uint) -> u32 { unsafe { self.readstruct(offset) } }
-    pub fn readi8(&self, offset: uint) -> i8 { unsafe { self.readstruct(offset) } }
-    pub fn readi16(&self, offset: uint) -> i16 { unsafe { self.readstruct(offset) } }
-    pub fn readi32(&self, offset: uint) -> i32 { unsafe { self.readstruct(offset) } }
+    pub fn writeu8(&mut self, offset: uint, value: u8) { self.writestruct(offset, value); }
+    pub fn writeu16(&mut self, offset: uint, value: u16) { self.writestruct(offset, value); }
+    pub fn writeu32(&mut self, offset: uint, value: u32) { self.writestruct(offset, value); }
+    pub fn writei8(&mut self, offset: uint, value: i8) { self.writestruct(offset, value); }
+    pub fn writei16(&mut self, offset: uint, value: i16) { self.writestruct(offset, value); }
+    pub fn writei32(&mut self, offset: uint, value: i32) { self.writestruct(offset, value); }
+    pub fn readu8(&self, offset: uint) -> u8 { unsafe { self.readstructunsafe(offset) } }
+    pub fn readu16(&self, offset: uint) -> u16 { unsafe { self.readstructunsafe(offset) } }
+    pub fn readu32(&self, offset: uint) -> u32 { unsafe { self.readstructunsafe(offset) } }
+    pub fn readi8(&self, offset: uint) -> i8 { unsafe { self.readstructunsafe(offset) } }
+    pub fn readi16(&self, offset: uint) -> i16 { unsafe { self.readstructunsafe(offset) } }
+    pub fn readi32(&self, offset: uint) -> i32 { unsafe { self.readstructunsafe(offset) } }
 }

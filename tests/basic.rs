@@ -10,6 +10,7 @@ extern crate water;
 use water::Net;
 use water::Endpoint;
 use water::RawMessage;
+use water::NoPointers;
 
 use std::io::timer::sleep;
 use std::time::duration::Duration;
@@ -29,6 +30,12 @@ struct SafeStructure {
     b:      u32,
     c:      u8,
 }
+
+// Do not tag a structure has having no pointers when it does. This will
+// violate the memory safety of Rust. If you are not sure if a structure
+// has pointers then find out! Anything with pointers when read on the
+// recieving end violates the memory safety of Rust.
+impl NoPointers for SafeStructure {}
 
 fn funnyworker(mut net: Net, dbgid: uint) {
     // Create our endpoint.
@@ -56,12 +63,14 @@ fn funnyworker(mut net: Net, dbgid: uint) {
             match result {
                 Ok(msg) => {
                     println!("reading message now");
-                    let safestruct: SafeStructure = unsafe { msg.readstruct(0) };
+                    let safestruct: SafeStructure = msg.readstruct(0);
                     println!("asserting on message");
-                    assert!(safestruct.a == safestruct.b as u64);
-                    assert!(safestruct.c == 0x12);
-                    println!("thread[{}] got message", dbgid);
-                    recvmsgcnt += 1;
+                    if safestruct.a != 0x10 {
+                        assert!(safestruct.a == safestruct.b as u64);
+                        assert!(safestruct.c == 0x12);
+                        println!("thread[{}] got message", dbgid);
+                        recvmsgcnt += 1;
+                    }
                 },
                 Err(err) => {
                     println!("thread[{}] no more messages", dbgid);
@@ -137,7 +146,7 @@ fn basicio() {
         let result = ep.recvorblock(Timespec { sec: 1, nsec: 0 });
         match result {
             Ok(msg) => {
-                let safestruct: SafeStructure = unsafe { msg.readstruct(0) };
+                let safestruct: SafeStructure = msg.readstruct(0);
                 if safestruct.a == safestruct.b as u64 && safestruct.b as u64 == safestruct.c as u64 {
                     println!("got finished!");
                     completedcnt += 1;

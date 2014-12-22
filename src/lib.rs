@@ -10,6 +10,7 @@ pub use net::Net;
 pub use endpoint::Endpoint;
 pub use rawmessage::RawMessage;
 pub use net::NetProtocolAddress;
+pub use rawmessage::NoPointers;
 
 mod endpoint;
 mod net;

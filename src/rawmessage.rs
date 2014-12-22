@@ -83,6 +83,14 @@ impl RawMessage {
         }
     }
 
+    pub fn new_fromstr(s: &str) -> RawMessage {
+        let m = RawMessage::new(s.len());
+        unsafe {
+            copy_memory(m.buf, *(transmute::<&&str, *const uint>(&s)) as *const u8, s.len());
+        }
+        m
+    }
+
     pub fn cap(&self) -> uint {
         let lock = unsafe { (*self.lock).lock() };
         return self.cap;

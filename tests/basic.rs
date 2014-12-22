@@ -105,7 +105,18 @@ fn funnyworker(mut net: Net, dbgid: uint) {
 }
 
 #[test]
-fn simpletest() {
+fn rawmessage() {
+    let m = RawMessage::new_fromstr("ABCDE");
+    assert!(m.readu8(0) == 65);
+    assert!(m.readu8(1) == 66);
+    assert!(m.readu8(2) == 67);
+    assert!(m.readu8(3) == 68);
+    assert!(m.readu8(4) == 69);
+    assert!(m.len() == 5);
+}
+
+#[test]
+fn basicio() {
     // Create net with ID 234.
     let mut net: Net = Net::new(234);
 
@@ -143,5 +154,5 @@ fn simpletest() {
 }
 
 fn main() {
-    simpletest();   
+    basicio();
 }

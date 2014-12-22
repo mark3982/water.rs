@@ -19,6 +19,11 @@ use time::Timespec;
 use rawmessage::RawMessage;
 use endpoint::Endpoint;
 
+use tcp::TCPLISTENER;
+use tcp::TCPListener;
+use tcp::TCPCONNECTOR;
+use tcp::TCPConnector;
+
 pub enum NetProtocolAddress {
     TCP(String, u16)
 }
@@ -154,15 +159,15 @@ impl Net {
     // Listens for and accepts TCP connections from remote
     // networks and performs simple routing between the two
     // networks.
-    pub fn tcplisten(&self, addr: NetProtocolAddress){
-
+    pub fn tcplisten(&self, host: String, port: u16) -> TCPLISTENER {
+        TCPListener::new(self, host, port)
     }
 
     // Tries to maintain a TCP connecton to the specified remote
     // network and performs simple routing between the two 
     // networks.
-    pub fn tcpconnect(&self, addr: NetProtocolAddress) {
-
+    pub fn tcpconnect(&self, host: String, port: u16) -> TCPCONNECTOR {
+        TCPConnector::new(self, host, port)
     } 
 
     pub fn sendas(&self, rawmsg: &RawMessage, frmsid: u64, frmeid: u64) {

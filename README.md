@@ -96,70 +96,14 @@ does not consume two megabyte for two endpoints but rather one megabyte plus rou
 for each endpoint who recieves the message.
 
 
-Asynchronous Send And Synchronous Receive Example
+Examples
 ==
+You can find decent examples in the `/tests/` directory at the source tree root. 
 
-An example of synchronous blocking. By default `recv` is asynchrnous. We use `recvorblock`:
-```
-    extern crate time;
-    extern crate water;
+The most basic example is `basic.rs` which has multiple threads send messages to themselves and the main thread. After so many messages are sent they send a termination message which main counts. Once main has recieved enough termination messages it will also terminate which ends the test. This example uses raw messages.
 
-    use water::Net;
-    use water::Endpoint;
-    use water::RawMessage;
+A good example of sync messages can be found in `safesync.rs`. It was named so because of the, hopefully, memory safe design of sending these messages. The intentions of sync messages are to be a replacement for channels which can be found in the standard library.
 
-    use std::io::timer::sleep;
-    use std::time::duration::Duration;
-    use time::Timespec;
-
-    fn funnyworker(mut net: Net, dbgid: uint) {
-        // Create our endpoint.
-        let ep: Endpoint = net.new_endpoint();
-        let mut rawmsg: RawMessage;
-
-        loop {
-            sleep(Duration::seconds(1));
-            // Read anything we can.
-            loop { 
-                println!("thread[{}] recving", dbgid);
-                let result = ep.recvorblock(Timespec { sec: 1, nsec: 0 });
-                match result {
-                    Ok(msg) => {
-                        println!("thread[{}] got message", dbgid);
-                    },
-                    Err(err) => {
-                        println!("thread[{}] no more messages", dbgid);
-                        break;
-                    }
-                }
-            }
-            // Send something random.
-            println!("thread[{}] sending random message", dbgid);
-            {
-                rawmsg = RawMessage::new(32);
-                rawmsg.dstsid = 0;
-                rawmsg.dsteid = 0;
-                ep.send(&rawmsg);
-            }
-        }
-    }
-
-    fn main() {
-        // Create net with ID 234.
-        let mut net: Net = Net::new(234);
-
-        // Spawn threads.
-        let netclone = net.clone();
-        spawn(move || { funnyworker(netclone, 0); });
-        let netclone = net.clone();
-        spawn(move || { funnyworker(netclone, 1); });
-        let netclone = net.clone();
-        spawn(move || { funnyworker(netclone, 2); });
-
-        println!("main thread done");
-        loop { }
-    }
-```
 
 Serialization Using Sync Messages
 ===

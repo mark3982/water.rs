@@ -13,6 +13,9 @@ use water::RawMessage;
 use water::NoPointers;
 use water::MessagePayload;
 use water::Message;
+use water::IoResult;
+use water::IoError;
+use water::IoErrorCode;
 
 use std::io::timer::sleep;
 use std::time::duration::Duration;
@@ -55,75 +58,51 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     // duplication to prevent you from changing a packet before it
     // gets completely sent.
     let mut msgtosend = Message::new_raw(32);
+    msgtosend.dstsid = 0;
+    msgtosend.dsteid = 0;
 
     while recvmsgcnt < 1001u32 {
         // Read anything we can.
         loop { 
-            println!("thread[{}] recving", dbgid);
-            let result = ep.recvorblock(Timespec { sec: 0, nsec: 1000000 });
-            match result {
-                Ok(msg) => {
-                    println!("reading message now");
-                    match msg.payload {
-                        MessagePayload::Raw(payload) => {
-                            let safestruct: SafeStructure = payload.readstruct(0);
-                            println!("asserting on message");
-                            if safestruct.a != 0x10 {
-                                assert!(safestruct.a == safestruct.b as u64);
-                                assert!(safestruct.c == 0x12);
-                                println!("thread[{}] got message", dbgid);
-                                recvmsgcnt += 1;
-                            }
-                        },
-                        _ => {
-                            panic!("unexpected message type");
-                        }
-                    }
-                },
-                Err(err) => {
-                    println!("thread[{}] no more messages", dbgid);
-                    break;
-                }
+            //println!("thread[{}] recving", dbgid);
+            //let result = ep.recvorblock(Timespec { sec: 0, nsec: 1000000 });
+            let result = ep.recv();
+
+            if result.is_err() {
+                //println!("thread timed out recving");
+                break;
+            }
+
+            let safestruct: SafeStructure = result.ok().get_raw().readstruct(0);
+            if safestruct.a != 0x10 {
+                //println!("@@thread[{}] got message", dbgid);
+                assert!(safestruct.a == safestruct.b as u64);
+                assert!(safestruct.c == 0x12);
+                recvmsgcnt += 1;
             }
         }
 
-        // Send something random.
-        println!("thread[{}] sending random message", dbgid);
+        // Send something.
         if sentmsgcnt < 1000u32 {
-            msgtosend.dstsid = 0;
-            msgtosend.dsteid = 0;
-            {
-                let rawmsg = msgtosend.get_rawref();
-
-                let safestruct = SafeStructure {
-                    a:  0x12345678,
-                    b:  0x12345678,
-                    c:  0x12,
-                };
-                // This will move the value meaning you can not use it afterwards, but
-                // it should be optimized into a pointer so there is no performance
-                // difference.
-                // rawmsg.writestruct(0, safestruct);
-                // This will copy the value using a reference into the message.
-                rawmsg.writestructref(0, &safestruct);
-            }
-
+            println!("thread[{}] sending message", dbgid);
+            let safestruct = SafeStructure {
+                a:  0x12345678,
+                b:  0x12345678,
+                c:  0x12,
+            };
+            //println!("thread sending something");
+            msgtosend.get_rawref().writestructref(0, &safestruct);
             ep.send(&msgtosend);
             sentmsgcnt += 1;
         }
     }
 
-    {
-        let rawmsg = msgtosend.get_rawref();
-
-        let safestruct = SafeStructure {
-            a:  0x10,
-            b:  0x10,
-            c:  0x10,
-        };
-
-        rawmsg.writestructref(0, &safestruct);
-    }
+    let safestruct = SafeStructure {
+        a:  0x10,
+        b:  0x10,
+        c:  0x10,
+    };
+    msgtosend.get_rawref().writestructref(0, &safestruct);
     ep.send(&msgtosend);
 
     println!("thread[{}]: exiting", dbgid);
@@ -145,6 +124,12 @@ fn basicio() {
     // Create net with ID 234.
     let mut net: Net = Net::new(234);
 
+    // Create endpoint just to be sure we do not miss any messages
+    // that will come from the threads. Although, we will likely
+    // be in the loop below by the time the threads start sending.
+    let ep = net.new_endpoint();
+    let mut completedcnt: u32 = 0u32;
+
     // Spawn threads.
     let netclone = net.clone();
     spawn(move || { funnyworker(netclone, 0); });
@@ -153,35 +138,25 @@ fn basicio() {
     let netclone = net.clone();
     spawn(move || { funnyworker(netclone, 2); });
 
-    let ep = net.new_endpoint();
-    println!("main thread done");
-
-    let mut completedcnt: u32 = 0u32;
+    let mut sectowait = 3i64;
 
     loop {
-        let result = ep.recvorblock(Timespec { sec: 1, nsec: 0 });
-        match result {
-            Ok(msg) => {
-                println!("reading message now");
-                match msg.payload {
-                    MessagePayload::Raw(payload) => {
-                        let safestruct: SafeStructure = payload.readstruct(0);
-                        println!("asserting on message");
-                        if safestruct.a == 0x10 {
-                            println!("got finished");
-                            completedcnt += 1;
-                            if completedcnt > 2 {
-                                break;
-                            }
-                        }
-                    },
-                    _ => {
-                        panic!("unexpected message type");
-                    }
-                }
-            },
-            Err(err) => {
-                continue;
+        let result = ep.recvorblock(Timespec { sec: sectowait, nsec: 0 });
+
+        // It seems we need to wait just a bit I suppose for the threads
+        // to actually get a message sent. Then after that we can read quite
+        // fast.
+        sectowait = 1i64;
+
+        if result.is_err() {
+            panic!("timed out waiting for messages likely..");
+        }
+
+        let safestruct: SafeStructure = result.ok().get_raw().readstruct(0);
+        if safestruct.a == 0x10 {
+            completedcnt += 1;
+            if completedcnt > 2 {
+                break;
             }
         }
     }

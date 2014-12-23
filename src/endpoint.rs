@@ -9,9 +9,6 @@ use std::mem::size_of;
 use std::rt::heap::deallocate;
 use std::sync::Mutex;
 use std::sync::Condvar;
-use std::io::IoResult;
-use std::io::IoError;
-use std::io::IoErrorKind;
 use std::time::duration::Duration;
 use std::mem::transmute_copy;
 use std::mem::uninitialized;
@@ -25,6 +22,50 @@ use net::Net;
 use rawmessage::RawMessage;
 use message::Message;
 use message::MessagePayload;
+
+pub enum IoErrorCode {
+    TimedOut,
+    NoMessages,
+}
+
+pub struct IoError {
+    pub code:   IoErrorCode,
+}
+
+pub enum IoResult<T> {
+    Err(IoError),
+    Ok(T),
+}
+
+impl<T> IoResult<T> {
+    pub fn ok(self) -> T {
+        match self {
+            IoResult::Ok(v) => v,
+            IoResult::Err(e) => panic!("not `IoResult::Ok`!"),
+        }
+    }
+
+    pub fn err(self) -> IoError {
+        match self {
+            IoResult::Ok(v) => panic!("not `IoResult::Err`!"),
+            IoResult::Err(e) => e,
+        }
+    }
+
+    pub fn is_ok(&self) -> bool {
+        match *self {
+            IoResult::Ok(_) => true,
+            IoResult::Err(_) => false,
+        }
+    }
+
+    pub fn is_err(&self) -> bool {
+        match *self {
+            IoResult::Ok(_) => false,
+            IoResult::Err(_) => true,
+        }
+    }
+}
 
 struct Internal {
     lock:           Mutex<uint>,
@@ -238,7 +279,7 @@ impl Endpoint {
                 let ctime: Timespec = get_time();
 
                 if ctime > when {
-                    return Result::Err(IoError { kind: IoErrorKind::TimedOut, desc: "Timed Out", detail: Option::None });
+                    return IoResult::Err(IoError { code: IoErrorCode::TimedOut });
                 }
             }
 
@@ -261,7 +302,7 @@ impl Endpoint {
     pub fn recv_nolock(&self) -> IoResult<Message> {
         unsafe {
             if (*self.i).messages.len() < 1 {
-                return Result::Err(IoError { kind: IoErrorKind::TimedOut, desc: "No Messages In Buffer", detail: Option::None });
+                return IoResult::Err(IoError { code: IoErrorCode::NoMessages });
             }
 
             let msg = (*self.i).messages.remove(0).unwrap();
@@ -269,8 +310,8 @@ impl Endpoint {
             (*self.i).memoryused -= msg.cap();
 
             match msg.payload {
-                MessagePayload::Raw(_) => Result::Ok(msg.dup()),
-                MessagePayload::Sync(_) => Result::Ok(msg),
+                MessagePayload::Raw(_) => IoResult::Ok(msg.dup()),
+                MessagePayload::Sync(_) => IoResult::Ok(msg),
             }
         }
     }    

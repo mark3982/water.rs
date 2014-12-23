@@ -57,15 +57,23 @@ fn syncio() {
     let mut completedcnt: u32 = 0u32;
 
     let result = ep.recvorblock(Timespec { sec: 3, nsec: 0 });
+
+    let msg: Foo = result.ok().get_sync().get_payload();
+
+    // If you want to properly check for a result you can do
+    // this (below).
+    /*
     match result {
         Ok(msg) => {
-            let syncmsg = msg.get_sync();
-            let msg: Foo = syncmsg.get_payload();
+            match msg.payload {
+                let foo: Foo = msg.get_sync().get_payload();
+
         },
         Err(err) => {
             panic!("never got message!");
         }
     }
+    */
 }
 
 fn main() {

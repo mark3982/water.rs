@@ -64,7 +64,7 @@ fn syncio() {
 
     let result = ep.recvorblock(Timespec { sec: 3, nsec: 0 });
 
-    let msg: Arc<Bar> = result.ok().get_sync().get_payload();
+    let msg: Arc<Foo> = result.ok().get_sync().get_payload();
 
     // If you want to properly check for a result you can do
     // this (below).

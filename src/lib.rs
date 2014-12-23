@@ -15,7 +15,9 @@ pub use message::Message;
 pub use endpoint::IoResult;
 pub use endpoint::IoError;
 pub use endpoint::IoErrorCode;
+pub use syncmessage::SyncMessage;
 
+mod syncmessage;
 mod endpoint;
 mod net;
 mod rawmessage;

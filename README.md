@@ -161,7 +161,14 @@ An example of synchronous blocking. By default `recv` is asynchrnous. We use `re
     }
 ```
 
-Serialization
+Serialization Using Sync Messages
+===
+
+The sync type message support is inteded to help replace the usage of channels from the standard Rust library. The sync messaes only support the sending of `Sync` types and they can only be recieved by a single endpoint. You can however still broadcast a sync message to all endpoints on your local net but only one of them will actually get the message. At the time I see no straight forward or easy way to send `Sync` types across process boundaries which would include remote machines.
+
+_If you really need to send a structure across process boundaries or a structure that is not `Sync` then you will have to rely on the raw message which is covered below._
+
+Serialization Using Raw Messages
 ===
 
 I am looking at including serialization support similar to JSON and HEX. However, at the moment you will have

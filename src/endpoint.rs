@@ -2,6 +2,8 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+use std::sync::atomic;
+use std::ptr;
 use std::rt::heap::allocate;
 use std::mem::size_of;
 use std::rt::heap::deallocate;
@@ -22,6 +24,7 @@ use timespec;
 use net::Net;
 use rawmessage::RawMessage;
 use message::Message;
+use message::MessagePayload;
 
 struct Internal {
     lock:           Mutex<uint>,
@@ -37,8 +40,8 @@ struct Internal {
 
 pub struct Endpoint {
     i:          *mut Internal,
-    pub eid:        u64,
-    pub sid:        u64,
+    pub eid:    u64,
+    pub sid:    u64,
     net:        Net,
 
 }
@@ -49,9 +52,7 @@ impl Drop for Endpoint {
             let mut dealloc: bool = false;
 
             {
-                println!("locking mutex {}", self.i);
                 let locked = (*self.i).lock.lock();
-                println!("mutex locked");
 
                 if (*self.i).refcnt == 0 {
                     panic!("drop called with refcnt zero");
@@ -61,28 +62,21 @@ impl Drop for Endpoint {
                 if (*self.i).refcnt == 0 {
                     dealloc = true;
                 }
-
-                println!("unlocking mutex");
             }
-            println!("mutex unlocked");
 
             // We can not deallocate the mutex because once `locked` drops out of
             // scope it may access the memory supporting the type therefore we must
             // first unlock the mutex then deallocate. We can be sure we do not need
             // a mutex, because obviously we were the last user of it.
             if dealloc {
-                println!("endpoint deallocting!");
-
-                // Force proper drop calls to happen.
-                let i: Internal = uninitialized();
-                let p: *mut u8 = transmute_copy(&&i);
-                copy_memory(p, self.i as *mut u8, size_of::<Internal>());
-                drop(i);
+                drop(ptr::read(&*self.i));
+                
+                // Not sure if I really need something like this. But.. I could
+                // see reordering maybe being a problem?
+                //atomic::fence(atomic::Acquire);
 
                 deallocate(self.i as *mut u8, size_of::<Internal>(), size_of::<uint>());
-                println!("endpoint deallocated!");
             }
-            println!("total exit");
         }
     }
 }
@@ -244,7 +238,7 @@ impl Endpoint {
                 let ctime: Timespec = get_time();
 
                 if ctime > when {
-                    return Result::Err(IoError { kind: IoErrorKind::TimedOut, desc: "Timed Out", detail: Option::None })
+                    return Result::Err(IoError { kind: IoErrorKind::TimedOut, desc: "Timed Out", detail: Option::None });
                 }
             }
 
@@ -270,11 +264,14 @@ impl Endpoint {
                 return Result::Err(IoError { kind: IoErrorKind::TimedOut, desc: "No Messages In Buffer", detail: Option::None });
             }
 
-            let rawmsg = (*self.i).messages.remove(0).unwrap().dup();
+            let msg = (*self.i).messages.remove(0).unwrap();
 
-            (*self.i).memoryused -= rawmsg.cap();
+            (*self.i).memoryused -= msg.cap();
 
-            Result::Ok(rawmsg)
+            match msg.payload {
+                MessagePayload::Raw(_) => Result::Ok(msg.dup()),
+                MessagePayload::Sync(_) => Result::Ok(msg),
+            }
         }
     }    
 }

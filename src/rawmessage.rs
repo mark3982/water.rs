@@ -23,23 +23,31 @@ pub struct RawMessage {
 
 impl Drop for RawMessage {
     fn drop(&mut self) {
-        unsafe { 
-            let lock = (*self.lock).lock();
+        unsafe {
+            let mut dealloc = false;
 
-            //println!("drop called for {:p} with ref cnt {}", self, *self.refcnt);
-            if *self.refcnt < 1 {
-                panic!("drop called for {:p} with reference count {} and buf {}!", self, *self.refcnt, self.buf);
-            } 
+            {
+                let lock = (*self.lock).lock();
 
-            *self.refcnt = *self.refcnt - 1;
+                //println!("drop called for {:p} with ref cnt {}", self, *self.refcnt);
+                if *self.refcnt < 1 {
+                    panic!("drop called for {:p} with reference count {} and buf {}!", self, *self.refcnt, self.buf);
+                } 
 
-            if *self.refcnt < 1 {
-                if self.cap > 0 {
-                    deallocate(self.buf, self.cap, size_of::<uint>());
-                    deallocate(self.lock as *mut u8, size_of::<Mutex<bool>>(), size_of::<uint>());
-                    self.buf = 0 as *mut u8;
-                    self.lock = 0 as *mut Mutex<bool>;
+                *self.refcnt = *self.refcnt - 1;
+
+                if *self.refcnt < 1 {
+                    if self.cap > 0 {
+                        dealloc = true;
+                    }
                 }
+            }
+
+            if dealloc {
+                deallocate(self.buf, self.cap, size_of::<uint>());
+                deallocate(self.lock as *mut u8, size_of::<Mutex<bool>>(), size_of::<uint>());
+                self.buf = 0 as *mut u8;
+                self.lock = 0 as *mut Mutex<bool>;
             }
         }
     }

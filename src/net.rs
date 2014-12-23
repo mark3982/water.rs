@@ -4,6 +4,7 @@
 
 extern crate core;
 
+use std::ptr;
 use std::rt::heap::allocate;
 use std::rt::heap::deallocate;
 use std::mem::size_of;
@@ -41,14 +42,21 @@ pub struct Net {
 impl Drop for Net {
     fn drop(&mut self) {
         unsafe {
-            //println!("net drop for {:p} and {:p}", self, self.i);
-            let locked = (*self.i).lock.lock();
-            if (*self.i).refcnt == 0 {
-                panic!("drop called with refcnt zero");
+            let mut dealloc = false;
+            {
+                let locked = (*self.i).lock.lock();
+                if (*self.i).refcnt == 0 {
+                    panic!("drop called with refcnt zero");
+                }
+                
+                (*self.i).refcnt -= 1;
+                if (*self.i).refcnt == 0 {
+                    dealloc = true;
+                }
             }
-            
-            (*self.i).refcnt -= 1;
-            if (*self.i).refcnt == 0 {
+
+            if dealloc {
+                drop(ptr::read(&*self.i));
                 deallocate(self.i as *mut u8, size_of::<Internal>(), size_of::<uint>());
             }
         }

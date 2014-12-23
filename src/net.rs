@@ -196,6 +196,30 @@ impl Net {
         self.send_internal(&duped);
     }
 
+    pub fn sendcloneas(&self, msg: &mut Message, fromsid: u64, fromeid: u64) {
+        if !msg.is_clone() {
+            panic!("`sendclone` can only be used with clone messages!")
+        }
+        msg.srcsid = fromsid;
+        msg.srceid = fromeid;
+        self.sendclone(msg);
+    }
+
+    pub fn sendclone(&self, msg: &Message) {
+        if msg.dstsid != 1 && msg.dstsid != self.sid {
+            panic!("you can only send clone message to local net!")
+        }
+
+        unsafe {
+            let lock = (*self.i).lock.lock();
+            for ep in (*self.i).endpoints.iter_mut() {
+                if msg.dsteid == ep.eid {
+                    ep.give(msg);
+                }
+            }
+        }
+    }
+
     pub fn sendsyncas(&self, mut msg: Message, frmsid: u64, frmeid: u64) {
         msg.srcsid = frmsid;
         msg.srceid = frmeid;

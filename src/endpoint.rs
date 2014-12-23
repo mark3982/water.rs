@@ -247,6 +247,10 @@ impl Endpoint {
         self.net.sendsyncas(msg, self.sid, self.eid);
     }
 
+    pub fn sendclone(&self, msg: &mut Message) {
+        self.net.sendcloneas(msg, self.sid, self.eid);
+    }
+
     pub fn sendorblock(&self, msg: &Message) {
         unimplemented!();
     }
@@ -312,6 +316,7 @@ impl Endpoint {
             match msg.payload {
                 MessagePayload::Raw(_) => IoResult::Ok(msg.dup()),
                 MessagePayload::Sync(_) => IoResult::Ok(msg),
+                MessagePayload::Clone(_) => IoResult::Ok(msg),
             }
         }
     }    

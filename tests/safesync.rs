@@ -13,12 +13,18 @@ use water::RawMessage;
 use water::NoPointers;
 use water::Message;
 
+use std::rc::Rc;
+use std::sync::Arc;
 use std::io::timer::sleep;
 use std::time::duration::Duration;
 use time::Timespec;
 
 struct Foo {
-    a:      uint
+    a:      uint,
+}
+
+struct Bar {
+    a:      uint,
 }
 
 impl Sync for Foo { }
@@ -29,7 +35,7 @@ fn funnyworker(mut net: Net, dbgid: uint, dsteid: u64) {
 
     println!("thread[{}] started", dbgid);
 
-    let mut msg = Message::new_sync(Foo { a: 0 });
+    let mut msg = Message::new_sync(Arc::new(Foo { a: 0 }));
 
     // A sync message must be to the local net and have
     // only endpoint. You can have multiple endpoints with
@@ -58,7 +64,7 @@ fn syncio() {
 
     let result = ep.recvorblock(Timespec { sec: 3, nsec: 0 });
 
-    let msg: Foo = result.ok().get_sync().get_payload();
+    let msg: Arc<Bar> = result.ok().get_sync().get_payload();
 
     // If you want to properly check for a result you can do
     // this (below).

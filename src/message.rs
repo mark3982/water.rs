@@ -3,6 +3,15 @@ use std::intrinsics::TypeId;
 
 use rawmessage::RawMessage;
 
+pub fn workaround_to_static_bug() {
+    panic!("sync message was not correct type");
+}
+
+/// A structure for generic represention of a message.
+///
+/// This structure contains the actual message data. It exposes
+/// the source and destination fields, but the actual message payload
+/// must be accessed using the `payload` field.
 pub struct Message {
     pub srcsid:         u64,             // source server id
     pub srceid:         u64,             // source endpoint id
@@ -11,26 +20,54 @@ pub struct Message {
     pub payload:        MessagePayload,  // actual payload
 }
 
+/// A message that can be cloned but not copied, and can be shared with other threads.
+///
+/// This message _can_ be cloned and _can_ be recieved by multiple endpoints, but only
+/// on the local net. This message can not cross process boundaries and is sharable only
+/// with threads under the same process as the sender.
+pub struct CloneMessage {
+    pub hash:           u64,
+    pub payload:        RawMessage,
+}
+
+/// A message that can not be cloned or copied, and can be shared with other threads.
+///
+/// This message can not be cloned or copied and can only be recieved
+/// by a single endpoint on the local net. If you try to send it to
+/// other nets it will fail, possibily with a panic. Therefore it should
+/// be known that this message can not cross process boundaries.
 pub struct SyncMessage {
     pub hash:           u64,
     pub payload:        RawMessage,
 }
 
+/// Helps `Message` become generic allowing it to represent multiple types of messages.
 pub enum MessagePayload {
     Raw(RawMessage),
     Sync(SyncMessage),
+    Clone(CloneMessage),
 }
 
 impl Clone for Message {
+    /// Will properly clone the message and respect the actual message type. This can fail
+    /// with a panic if the actual message type does not support `clone()` therefore it is
+    /// your responsibility to verify or ensure the message supports `clone()`.
     fn clone(&self) -> Message {
         match self.payload {
             MessagePayload::Raw(ref msg) => {
                 Message {
                     srcsid: self.srcsid, srceid: self.srceid,
                     dstsid: self.dstsid, dsteid: self.dsteid,
-                    payload: MessagePayload::Raw(msg.clone())
+                    payload: MessagePayload::Raw((*msg).clone())
                 }
             },
+            MessagePayload::Clone(ref msg) => {
+                Message {
+                    srcsid: self.srcsid, srceid: self.srceid,
+                    dstsid: self.dstsid, dsteid: self.dsteid,
+                    payload: MessagePayload::Clone((*msg).clone())
+                }                
+            }
             MessagePayload::Sync(ref msg) => {
                 panic!("Tried to clone a SyncMessage which is unique!");
             }
@@ -41,17 +78,18 @@ impl Clone for Message {
 }
 
 impl Message {
+    /// Returns the total capacity of the message. Also known as the total size of the 
+    /// message buffer which will contain raw byte data.
     pub fn cap(&self) -> uint {
         match self.payload {
-            MessagePayload::Raw(ref msg) => {
-                msg.cap()
-            },
-            MessagePayload::Sync(ref msg) => {
-                msg.payload.cap()
-            }
+            MessagePayload::Raw(ref msg) => msg.cap(),
+            MessagePayload::Sync(ref msg) => msg.payload.cap(),
+            MessagePayload::Clone(ref msg) => msg.payload.cap(),
         }
     }
 
+    /// Duplicates the message making a new buffer and returning that message. _At the
+    /// moment only raw messages can be duplicated._
     pub fn dup(&self) -> Message {
         match self.payload {
             MessagePayload::Raw(ref msg) => {
@@ -100,6 +138,31 @@ impl Message {
         }
     }
 
+    pub fn is_clone(&self) -> bool {
+        match self.payload {
+            MessagePayload::Sync(_) => false,
+            MessagePayload::Raw(_) => false,
+            MessagePayload::Clone(_) => true,
+        }
+    }
+
+    pub fn is_raw(&self) -> bool {
+        match self.payload {
+            MessagePayload::Sync(_) => false,
+            MessagePayload::Raw(_) => true,
+            MessagePayload::Clone(_) => false,
+        }
+    }
+
+    pub fn is_sync(&self) -> bool {
+        match self.payload {
+            MessagePayload::Sync(_) => true,
+            MessagePayload::Raw(_) => false,
+            MessagePayload::Clone(_) => false,
+        }
+    }
+
+
     pub fn new_raw(cap: uint) -> Message {
         Message {
             srcsid: 0, srceid: 0,
@@ -108,7 +171,17 @@ impl Message {
         }
     }
 
-    pub fn new_sync<T: Sync + 'static>(t: T) -> Message {
+    pub fn new_clone<T: Send + Clone + 'static>(t: T) -> Message {
+        // Create a message payload of type Sync.
+        let payload = MessagePayload::Clone(CloneMessage::new(t));
+
+        Message {
+            srcsid: 0, srceid: 0, dstsid: 0, dsteid: 0,
+            payload: payload,
+        }
+    }
+
+    pub fn new_sync<T: Send + 'static>(t: T) -> Message {
         // Create a message payload of type Sync.
         let payload = MessagePayload::Sync(SyncMessage::new(t));
 
@@ -119,8 +192,31 @@ impl Message {
     }
 }
 
+impl Clone for CloneMessage {
+    fn clone(&self) -> CloneMessage {
+        CloneMessage {
+            hash:       self.hash,
+            payload:    self.payload.clone(),
+        }
+    }
+}
+
 impl SyncMessage {
-    pub fn new<T: Sync + 'static>(t: T) -> SyncMessage {
+    pub fn get_payload<T: Send + 'static>(self) -> T {
+        let rawmsg = self.payload;
+
+        let tyid = TypeId::of::<T>();
+        let hash = tyid.hash();
+
+        if hash != self.hash {
+            panic!("sync message was not correct type");
+        }
+
+        let t: T = unsafe { rawmsg.readstructunsafe(0) };
+        t
+    }
+
+    pub fn new<T: Send + 'static>(t: T) -> SyncMessage {
         let tyid = TypeId::of::<T>();
         let hash = tyid.hash();
 
@@ -134,19 +230,36 @@ impl SyncMessage {
             payload:    rmsg
         }
     }
+}
 
-    pub fn get_payload<T: Sync + 'static>(self) -> T {
+impl CloneMessage {
+    pub fn new<T: Send + Clone + 'static>(t: T) -> CloneMessage {
+        let tyid = TypeId::of::<T>();
+        let hash = tyid.hash();
+
+        // Write the structure into a raw message, and
+        // consume it in the process making it unsable.
+        let mut rmsg = RawMessage::new(size_of::<T>());
+        rmsg.writestruct(0, t);
+
+        CloneMessage {
+            hash:       hash,
+            payload:    rmsg
+        }        
+    }
+
+    pub fn get_payload<T: Send + Clone + 'static>(self) -> T {
         let rawmsg = self.payload;
 
         let tyid = TypeId::of::<T>();
         let hash = tyid.hash();
 
         if hash != self.hash {
-            //panic!("sync message was not correct type");
-            loop { }
+            panic!("clone message was not correct type");
         }
 
         let t: T = unsafe { rawmsg.readstructunsafe(0) };
         t
     }
+
 }

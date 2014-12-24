@@ -2,6 +2,9 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::intrinsics::transmute;
 
+use std::io::{TcpListener, TcpStream};
+use std::io::{Acceptor, Listener};
+
 /*
     Trying a new design here were we actually put the
     Arc, Mutex, to usage. My other designs do the locking
@@ -22,39 +25,47 @@ use std::intrinsics::transmute;
 
 use net::Net;
 
-pub struct _TcpListener {
+pub struct _TcpBridgeListener {
     net:    Net,
+    host:   String,
+    port:   u16,
 
 }
-pub struct _TcpConnector {
+pub struct _TcpBridgeConnector {
     net:    Net,
 }
 
-pub type TcpListener = Arc<Mutex<_TcpListener>>;
-pub type TcpConnector = Arc<Mutex<_TcpConnector>>;
+pub type TcpBridgeListener = Arc<Mutex<_TcpBridgeListener>>;
+pub type TcpBridgeConnector = Arc<Mutex<_TcpBridgeConnector>>;
 
-impl _TcpListener {
-    pub fn thread(s: TcpListener) {
+impl _TcpBridgeListener {
+    pub fn thread(s: TcpBridgeListener) {
+
     }
 
-    pub fn new(net: &Net, host: String, port: u16) -> TcpListener {
-        let n = Arc::new(Mutex::new(_TcpListener { net: net.clone() }));
+    pub fn new(net: &Net, host: String, port: u16) -> TcpBridgeListener {
+        let n = Arc::new(Mutex::new(_TcpBridgeListener { 
+            net:    net.clone(),
+            host:   host,
+            port:   port,
+        }));
+
         let nclone = n.clone();
-        spawn(move || { _TcpListener::thread(nclone) });
+        spawn(move || { _TcpBridgeListener::thread(nclone) });
 
         n
     }
 
 }
 
-impl _TcpConnector {
-    pub fn thread(s: TcpConnector) {
+impl _TcpBridgeConnector {
+    pub fn thread(s: TcpBridgeConnector) {
     }
 
-    pub fn new(net: &Net, host: String, port: u16) -> TcpConnector {
-        let n = Arc::new(Mutex::new(_TcpConnector { net: net.clone() }));
+    pub fn new(net: &Net, host: String, port: u16) -> TcpBridgeConnector {
+        let n = Arc::new(Mutex::new(_TcpBridgeConnector { net: net.clone() }));
         let nclone = n.clone();
-        spawn(move || { _TcpConnector::thread(nclone)});
+        spawn(move || { _TcpBridgeConnector::thread(nclone)});
 
         n
     }

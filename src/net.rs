@@ -22,10 +22,9 @@ use endpoint::Endpoint;
 use message::Message;
 use message::MessagePayload;
 
-use tcp::TCPLISTENER;
-use tcp::TCPListener;
-use tcp::TCPCONNECTOR;
-use tcp::TCPConnector;
+use tcp;
+use tcp::TcpListener;
+use tcp::TcpConnector;
 
 struct Internal {
     lock:           Mutex<uint>,
@@ -165,15 +164,15 @@ impl Net {
     // Listens for and accepts TCP connections from remote
     // networks and performs simple routing between the two
     // networks.
-    pub fn tcplisten(&self, host: String, port: u16) -> TCPLISTENER {
-        TCPListener::new(self, host, port)
+    pub fn tcplisten(&self, host: String, port: u16) -> TcpListener {
+        tcp::_TcpListener::new(self, host, port)
     }
 
     // Tries to maintain a TCP connecton to the specified remote
     // network and performs simple routing between the two 
     // networks.
-    pub fn tcpconnect(&self, host: String, port: u16) -> TCPCONNECTOR {
-        TCPConnector::new(self, host, port)
+    pub fn tcpconnect(&self, host: String, port: u16) -> TcpConnector {
+        tcp::_TcpConnector::new(self, host, port)
     } 
 
     pub fn sendas(&self, rawmsg: &Message, frmsid: u64, frmeid: u64) {

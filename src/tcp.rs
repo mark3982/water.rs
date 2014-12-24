@@ -2,72 +2,59 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::intrinsics::transmute;
 
+/*
+    Trying a new design here were we actually put the
+    Arc, Mutex, to usage. My other designs do the locking
+    per method call, but once I really thought it I realized
+    that having the library caller do something like:
+
+        tcpconn.lock().getcount()
+
+    Is actually not too bad consider this lets the library
+    caller decide when to use the lock and when not too. The
+    alternative is:
+
+        tcpconn.getcount()
+
+    Even though it looks nicer it still results in the inability
+    to group many calls under the same locking call.
+*/
+
 use net::Net;
 
-pub type TCPLISTENER = Arc<RacyCell<TCPListener>>;
-pub type TCPCONNECTOR = Arc<RacyCell<TCPConnector>>;
-
-pub struct RacyCell<T> {
-    t:      T
-}
-
-impl<T> Deref<T> for RacyCell<T> {
-    fn deref<'a>(&'a self) -> &'a T {
-        &self.t
-    }
-}
-
-// Trying a new design here. It is dangerous to have to maintain
-// a seperate inner structure just to gain clone functionality.
-// Since Arc provides it we can use it, but Arc restricts the deref
-// to immutable. So this is my workaround to being able to use Arc.
-impl<T> RacyCell<T> {
-    pub fn new(t: T) -> RacyCell<T> {
-        RacyCell {t: t}
-    }
-
-    // This breaks mutability/immutability because it lets you take
-    // anything that is immutable and produce an mutable reference.
-    fn mutref(&self) -> &mut T {
-        let p: &mut RacyCell<T>;
-
-        p = unsafe { transmute(self) };
-
-        &mut p.t
-    }
-}
-
-pub struct TCPListener {
+pub struct _TcpListener {
     net:    Net,
+
 }
-pub struct TCPConnector {
+pub struct _TcpConnector {
     net:    Net,
 }
 
-impl TCPListener {
-    pub fn thread(s: TCPLISTENER) {
+pub type TcpListener = Arc<Mutex<_TcpListener>>;
+pub type TcpConnector = Arc<Mutex<_TcpConnector>>;
 
+impl _TcpListener {
+    pub fn thread(s: TcpListener) {
     }
 
-    pub fn new(net: &Net, host: String, port: u16) -> TCPLISTENER {
-        let n = Arc::new(RacyCell::new(TCPListener { net: net.clone() }));
+    pub fn new(net: &Net, host: String, port: u16) -> TcpListener {
+        let n = Arc::new(Mutex::new(_TcpListener { net: net.clone() }));
         let nclone = n.clone();
-        spawn(move || { TCPListener::thread(nclone) });
+        spawn(move || { _TcpListener::thread(nclone) });
 
         n
     }
 
 }
 
-impl TCPConnector {
-    pub fn thread(s: TCPCONNECTOR) {
-
+impl _TcpConnector {
+    pub fn thread(s: TcpConnector) {
     }
 
-    pub fn new(net: &Net, host: String, port: u16) -> TCPCONNECTOR {
-        let n = Arc::new(RacyCell::new(TCPConnector { net: net.clone() }));
+    pub fn new(net: &Net, host: String, port: u16) -> TcpConnector {
+        let n = Arc::new(Mutex::new(_TcpConnector { net: net.clone() }));
         let nclone = n.clone();
-        spawn(move || { TCPConnector::thread(nclone)});
+        spawn(move || { _TcpConnector::thread(nclone)});
 
         n
     }

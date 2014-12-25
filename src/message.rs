@@ -283,7 +283,9 @@ impl CloneMessage {
 
         // Write the structure into a raw message, and
         // consume it in the process making it unsable.
+        println!("@@ about to make raw message");
         let mut rmsg = RawMessage::new(size_of::<T>());
+        println!("@@ made raw message");
         rmsg.writestruct(0, t);
 
         CloneMessage {

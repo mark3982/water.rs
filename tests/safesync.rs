@@ -57,7 +57,7 @@ fn syncio() {
 
     // Spawn threads.
     let netclone = net.clone();
-    let eid = ep.eid;
+    let eid = ep.geteid();
     spawn(move || { funnyworker(netclone, 0, eid); });
 
     let result = ep.recvorblock(Timespec { sec: 3, nsec: 0 });

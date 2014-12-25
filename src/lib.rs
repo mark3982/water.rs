@@ -18,6 +18,7 @@ pub use endpoint::IoErrorCode;
 pub use syncmessage::SyncMessage;
 pub use tcp::TcpBridgeConnector;
 pub use tcp::TcpBridgeListener;
+pub use allocmutex::AllocMutex;
 
 pub mod syncmessage;
 pub mod endpoint;
@@ -26,3 +27,4 @@ pub mod rawmessage;
 pub mod timespec;
 pub mod tcp;
 pub mod message;
+pub mod allocmutex;

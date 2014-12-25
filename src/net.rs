@@ -4,6 +4,7 @@
 
 extern crate core;
 
+use std::sync::Arc;
 use std::ptr;
 use std::rt::heap::allocate;
 use std::rt::heap::deallocate;
@@ -37,50 +38,19 @@ pub type ID = u64;
 pub const UNUSED_ID: ID = !0u64;
 
 struct Internal {
-    lock:           Mutex<uint>,
     endpoints:      Vec<Endpoint>,
-    refcnt:         uint,
     hueid:          u64,              // highest unused endpoint id
+    sid:            u64,
 }
 
 pub struct Net {
-    i:      *mut Internal,
-    sid:    u64,                // this net/server id
-}
-
-impl Drop for Net {
-    fn drop(&mut self) {
-        unsafe {
-            let mut dealloc = false;
-            {
-                let locked = (*self.i).lock.lock();
-                if (*self.i).refcnt == 0 {
-                    panic!("drop called with refcnt zero");
-                }
-                
-                (*self.i).refcnt -= 1;
-                if (*self.i).refcnt == 0 {
-                    dealloc = true;
-                }
-            }
-
-            if dealloc {
-                drop(ptr::read(&*self.i));
-                deallocate(self.i as *mut u8, size_of::<Internal>(), size_of::<uint>());
-            }
-        }
-    }
+    i:      Arc<Mutex<Internal>>,
 }
 
 impl Clone for Net {
     fn clone(&self) -> Net {
-        unsafe {
-            let locked = (*self.i).lock.lock();
-            (*self.i).refcnt += 1;
-            Net {
-                i:      self.i,
-                sid:    self.sid,
-            }
+        Net {
+            i:      self.i.clone(),
         }
     }
 }
@@ -110,9 +80,10 @@ impl Net {
             sleep(Duration::microseconds(latency));
             let ctime: Timespec = get_time();
             {
-                let lock = unsafe { (*net.i).lock.lock() };
+                let mut i = net.i.lock();
+
                 wokesomeone = false;
-                for ep in unsafe { (*net.i).endpoints.iter_mut() } {
+                for ep in i.endpoints.iter_mut() {
                     if ctime > ep.getwaketime() {
                         if ep.wakeonewaiter() {
                             wokesomeone = true;
@@ -137,22 +108,12 @@ impl Net {
     }
 
     pub fn new(sid: u64) -> Net {
-        let i: *mut Internal;
-        
-        unsafe {
-            // Allocate memory then manually and dangerously initialize each field. If
-            // the structure changes and you forget to initialize it here then you have
-            // potentially a bug.
-            i = allocate(size_of::<Internal>(), size_of::<uint>()) as *mut Internal;
-            (*i).lock = Mutex::new(0);
-            (*i).endpoints = Vec::new();
-            (*i).refcnt = 1;
-            (*i).hueid = 0x10000;
-        }
-        
         let net = Net {
-            i:      i,
-            sid:    sid,
+            i:  Arc::new(Mutex::new(Internal {
+                endpoints:      Vec::new(),
+                hueid:          0x10000,
+                sid:            sid,
+            })),
         };
 
         // Spawn a helper thread which provides the ability
@@ -161,14 +122,6 @@ impl Net {
         spawn(move || { Net::sleeperthread(netclone) });
 
         net
-    }
-    
-    unsafe fn clone_nolock(&self) -> Net {
-        (*self.i).refcnt += 1;
-        Net {
-            i:      self.i,
-            sid:    self.sid,
-        }
     }
 
     // Listens for and accepts TCP connections from remote
@@ -215,16 +168,15 @@ impl Net {
     }
 
     pub fn sendclone(&self, msg: &Message) {
-        if msg.dstsid != 1 && msg.dstsid != self.sid {
+        let mut i = self.i.lock();
+
+        if msg.dstsid != 1 && msg.dstsid != i.sid {
             panic!("you can only send clone message to local net!")
         }
 
-        unsafe {
-            let lock = (*self.i).lock.lock();
-            for ep in (*self.i).endpoints.iter_mut() {
-                if msg.dsteid == ep.eid {
-                    ep.give(msg);
-                }
+        for ep in i.endpoints.iter_mut() {
+            if msg.dsteid == ep.geteid() {
+                ep.give(msg);
             }
         }
     }
@@ -240,7 +192,9 @@ impl Net {
     // to handle sending it only to the local net which should
     // have only threads running in this same process.
     pub fn sendsync(&self, msg: Message) {
-        if msg.dstsid != 1 && msg.dstsid != self.sid {
+        let mut i = self.i.lock();
+
+        if msg.dstsid != 1 && msg.dstsid != i.sid {
             panic!("you can only send sync message to local net!")
         }
 
@@ -249,13 +203,10 @@ impl Net {
         }
 
         // Find who we need to send the message to, and only them.
-        unsafe {
-            let lock = (*self.i).lock.lock();
-            for ep in (*self.i).endpoints.iter_mut() {
-                if msg.dsteid == ep.eid {
-                    ep.givesync(msg);
-                    return;
-                }
+        for ep in i.endpoints.iter_mut() {
+            if msg.dsteid == ep.geteid() {
+                ep.givesync(msg);
+                return;
             }
         }
     }
@@ -264,117 +215,79 @@ impl Net {
         match rawmsg.dstsid {
             0 => {
                 // broadcast to everyone
-                unsafe {
-                    // Lock this because it is shared between
-                    // threads and it is *not* thread safe.
-                    let lock = (*self.i).lock.lock();
-                    for ep in (*self.i).endpoints.iter_mut() {
-                        if rawmsg.dsteid == 0 || rawmsg.dsteid == ep.eid {
-                            ep.give(rawmsg);
-                        }
+                let mut i = self.i.lock();
+                for ep in i.endpoints.iter_mut() {
+                    if rawmsg.dsteid == 0 || rawmsg.dsteid == ep.geteid() {
+                        ep.give(rawmsg);
                     }
                 }                
             },
             1 => {
                 // ourself only
-                unsafe {
-                    // Lock this because it is shared between
-                    // threads and it is *not* thread safe.
-                    let lock = (*self.i).lock.lock();
-                    // Attempt to send to each endpoint. The endpoint
-                    // has logic to decide to accept or ignore it.
-                    for ep in (*self.i).endpoints.iter_mut() {
-                        if ep.sid == self.sid {
-                            if rawmsg.dsteid == 0 || rawmsg.dsteid == ep.eid {
-                                ep.give(rawmsg);
-                            }
+                let mut i = self.i.lock();
+                let sid = i.sid;
+                for ep in i.endpoints.iter_mut() {
+                    if ep.getsid() == sid {
+                        if rawmsg.dsteid == 0 || rawmsg.dsteid == ep.geteid() {
+                            ep.give(rawmsg);
                         }
                     }
                 }
             },
             dstsid => {
                 // specific server
-                unsafe {
-                    // Lock this because it is shared between
-                    // threads and it is *not* thread safe.
-                    let lock = (*self.i).lock.lock();
-                    // Attempt to send to each endpoint. The endpoint
-                    // has logic to decide to accept or ignore it.
-                    for ep in (*self.i).endpoints.iter_mut() {
-                        if ep.sid == dstsid {
-                            if rawmsg.dsteid == 0 || rawmsg.dsteid == ep.eid {
-                                ep.give(rawmsg);
-                            }
+                let mut i = self.i.lock();                    
+                for ep in i.endpoints.iter_mut() {
+                    println!("trying to send {} to {}", dstsid, ep.getsid());
+                    if ep.getsid() == dstsid {
+                        if rawmsg.dsteid == 0 || rawmsg.dsteid == ep.geteid() {
+                            ep.give(rawmsg);
                         }
                     }
-                }                
+                }
             }
         }
     }
 
     pub fn get_neweid(&mut self) -> u64 {
-        unsafe {
-            let lock = (*self.i).lock.lock();
-            self.get_neweid_nolock()
-        }
-    }
-
-    fn get_neweid_nolock(&mut self) -> u64 {
-        unsafe {
-            let eid = (*self.i).hueid;
-            (*self.i).hueid += 1;     
-            eid       
-        }
+        let mut i = self.i.lock();
+        let eid = i.hueid;
+        i.hueid += 1;
+        eid
     }
     
     pub fn new_endpoint_withid(&mut self, eid: u64) -> Endpoint {
-        unsafe {
-            let lock = (*self.i).lock.lock();
+        let mut i = self.i.lock();
 
-            if eid > (*self.i).hueid {
-                (*self.i).hueid = eid + 1;
-            }
-
-            let ep = Endpoint::new(self.sid, eid, self.clone_nolock());
-
-            (*self.i).endpoints.push(ep.clone());
-
-            ep
+        if eid > i.hueid {
+            i.hueid = eid + 1;
         }
+
+        let ep = Endpoint::new(i.sid, eid, self.clone());
+
+        i.endpoints.push(ep.clone());
+
+        ep
     }
 
     pub fn add_endpoint(&mut self, ep: Endpoint) {
-        unsafe {
-            let lock = (*self.i).lock.lock();
-            (*self.i).endpoints.push(ep);
-        }
+        self.i.lock().endpoints.push(ep);
     }
 
     pub fn new_endpoint(&mut self) -> Endpoint {
-        unsafe {
-            let ep: Endpoint;
-            {
-                let lock = (*self.i).lock.lock();
+        let mut i = self.i.lock();
 
-                ep = Endpoint::new(self.sid, self.get_neweid_nolock(), self.clone_nolock());
-            }
+        let ep = Endpoint::new(i.sid, i.hueid, self.clone());
+        i.hueid += 1;
 
-            // Well, we can not clone the Endpoint while holding the
-            // Net lock because the endpoint will clone the Net which
-            // will try to reacquire the non-re-entrant lock. So we unlock
-            // do the clone, then re-lock and add it.
-            let epcloned = ep.clone();
+        let epclone = ep.clone();
 
-            {
-                let lock = (*self.i).lock.lock();
-                (*self.i).endpoints.push(epcloned);
-            }
+        i.endpoints.push(epclone);
 
-            ep
-        }
+        ep
     }
     
     pub fn getserveraddr(&self) -> u64 {
-        self.sid
+        self.i.lock().sid
     }
 }

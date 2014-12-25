@@ -1,7 +1,7 @@
 [package]
 
 name = "water"
-version = "0.5.14-alpha"
+version = "0.5.18-alpha"
 authors = ["kmcguire <kmcg3413@gmail.com>"]
 description = "A Rust library that provides a thread-safe distributed message sending facility supporting synchronous and asynchronous I/O across process and machine boundaries. It also uses nets which allow message broadcasts to all, groups, or specific endpoints which eliminates the need for tons of individual channels to interconnect threads."
 homepage = "https://github.com/kmcguire3413/water.rs"

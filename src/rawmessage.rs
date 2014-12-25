@@ -7,6 +7,7 @@ use std::mem::transmute_copy;
 use std::mem::uninitialized;
 use std::intrinsics::copy_memory;
 use std::raw;
+use std::sync::Arc;
 
 // This is used to signify that a type is safe to
 // be written and read from a RawMessage across
@@ -14,130 +15,53 @@ use std::raw;
 // create dangerous code.
 pub trait NoPointers { }
 
-pub struct RawMessage {
-    buf:            *mut u8,         // message buffer
-    len:            uint,            // specified buffer length
-    cap:            uint,            // message buffer length
-    refcnt:         *mut uint,       // reference count
-    lock:           *mut Mutex<bool>,// 
+struct Internal {
+    refcnt:         uint,
+    len:            uint,
+    cap:            uint,
+    buf:            *mut u8,
 }
 
-impl Drop for RawMessage {
+impl Drop for Internal {
     fn drop(&mut self) {
-        unsafe {
-            let mut dealloc = false;
-
-            {
-                let lock = (*self.lock).lock();
-
-                //println!("drop called for {:p} with ref cnt {}", self, *self.refcnt);
-                if *self.refcnt < 1 {
-                    panic!("drop called for {:p} with reference count {} and buf {}!", self, *self.refcnt, self.buf);
-                } 
-
-                *self.refcnt = *self.refcnt - 1;
-
-                if *self.refcnt < 1 {
-                    if self.cap > 0 {
-                        dealloc = true;
-                    }
-                }
-            }
-
-            if dealloc {
-                deallocate(self.buf, self.cap, size_of::<uint>());
-                deallocate(self.lock as *mut u8, size_of::<Mutex<bool>>(), size_of::<uint>());
-                self.buf = 0 as *mut u8;
-                self.lock = 0 as *mut Mutex<bool>;
-            }
-        }
+        unsafe { deallocate(self.buf, self.cap, size_of::<uint>()); }
     }
 }
 
-impl Clone for RawMessage {
-    fn clone(&self) -> RawMessage {
-        let lock = unsafe { (*self.lock).lock() };
-
-        unsafe {
-            *self.refcnt += 1;
-        }
-
-        RawMessage {
-            buf: self.buf,
-            cap: self.cap,
-            len: self.len,
-            refcnt: self.refcnt,
-            lock: self.lock,
-        }
-    }
-}
-
-impl RawMessage {
-    pub fn new(cap: uint) -> RawMessage {
-        unsafe {
-            let refcnt: *mut uint = allocate(size_of::<uint>(), size_of::<uint>()) as *mut uint;
-            *refcnt = 1;
-
-            let lock: *mut Mutex<bool> = allocate(size_of::<Mutex<bool>>(), size_of::<uint>()) as *mut Mutex<bool>;
-            *lock = Mutex::new(false);
-
-            RawMessage {
-                buf: allocate(cap, size_of::<uint>()),
-                len: cap,
-                cap: cap,
-                refcnt: refcnt,
-                lock: lock, 
-            }
+impl Internal {
+    fn new(cap: uint) -> Internal {
+        Internal {
+            refcnt:     1,
+            len:        cap,
+            cap:        cap,
+            buf:        unsafe { allocate(cap, size_of::<uint>()) },
         }
     }
 
-    pub fn new_fromstr(s: &str) -> RawMessage {
-        let m = RawMessage::new(s.len());
+    fn dup(&self) -> Internal {
+        let i = Internal {
+            refcnt:     1,
+            len:        self.cap,
+            cap:        self.cap,
+            buf:        unsafe { allocate(self.cap, size_of::<uint>() ) },
+        };
+
+        unsafe { copy_memory(i.buf, self.buf, self.cap); }
+
+        i
+    }
+
+    fn resize(&mut self, newcap: uint) {
         unsafe {
-            copy_memory(m.buf, *(transmute::<&&str, *const uint>(&s)) as *const u8, s.len());
-        }
-        m
-    }
+            let nbuf = allocate(newcap, size_of::<uint>());
 
-    pub fn cap(&self) -> uint {
-        let lock = unsafe { (*self.lock).lock() };
-        return self.cap;
-    }
-
-    pub fn len(&self) -> uint {
-        let lock = unsafe { (*self.lock).lock() };
-        return self.len;
-    }
-
-    pub fn dup(&self) -> RawMessage {
-        unsafe {
-            let lock = (*self.lock).lock();
-
-            let n = RawMessage::new(self.cap);
-            copy_memory(n.buf, self.buf as *const u8, self.cap);
-
-            n
-        }
-    }
-
-    pub fn resize(&mut self, newcap: uint) {
-        unsafe {
-            let lock = (*self.lock).lock();
-
-            if newcap == 0 {
-                return;
-            }
-
-            let nbuf: *mut u8 = allocate(newcap, size_of::<uint>());
-            
-            if newcap < self.len {
-                copy_memory(nbuf, self.buf as *const u8, newcap);
+            if newcap <= self.cap {
+                copy_memory(nbuf, self.buf, self.cap);
             } else {
-                copy_memory(nbuf, self.buf as *const u8, self.cap);
+                copy_memory(nbuf, self.buf, newcap);
             }
 
             deallocate(self.buf, self.cap, size_of::<uint>());
-            self.buf = nbuf;
 
             self.cap = newcap;
 
@@ -146,51 +70,87 @@ impl RawMessage {
             }
         }
     }
+}
 
-    pub fn write_from_slice<T>(&mut self, offset: uint, f: &[T]) {
-        let mut coffset = offset;
+pub struct RawMessage {
+    i:              Arc<Mutex<Internal>>,   
+}
 
-        for i in f.iter() {
-            // Check if we are overunning the buffer.
-            if coffset + size_of::<T>() > self.cap {
-                panic!("write past end of buffer");
-            }
+impl Clone for RawMessage {
+    fn clone(&self) -> RawMessage {
+        RawMessage {
+            i:          self.i.clone(),
+        }
+    }
+}
 
-            self.writestructref(coffset, i);
+impl RawMessage {
+    pub fn new(cap: uint) -> RawMessage {
+        RawMessage {i:  Arc::new(Mutex::new(Internal::new(cap)))}
+    }
 
-            coffset += size_of::<T>();
+    pub fn new_fromstr(s: &str) -> RawMessage {
+        let m = RawMessage::new(s.len());
+        unsafe {
+            copy_memory(m.i.lock().buf, *(transmute::<&&str, *const uint>(&s)) as *const u8, s.len());
+        }
+        m
+    }
 
-            // Push the set length forward if needed.
-            if coffset > self.len {
-                self.len = coffset;
-            }
+    pub fn cap(&self) -> uint {
+        self.i.lock().cap
+    }
+
+    pub fn len(&self) -> uint {
+        self.i.lock().len
+    }
+
+    pub fn dup(&self) -> RawMessage {
+        RawMessage {
+            i:          Arc::new(Mutex::new(self.i.lock().dup())),
+        }
+    }
+
+    pub fn resize(&mut self, newcap: uint) {
+        self.i.lock().resize(newcap);
+    }
+
+    pub fn write_from_slice(&mut self, mut offset: uint, f: &[u8]) {
+        let mut i = self.i.lock();
+
+        if offset + f.len() > i.cap {
+            panic!("write past end of buffer");
+        }
+
+        for item in f.iter() {
+            unsafe { *((i.buf as uint + offset) as *mut u8) = *item };
+            offset += 1;
+        }
+
+        if offset > i.len {
+            i.len = offset;
         }
     }
 
     pub fn as_slice(&mut self) -> &[u8] {
         unsafe {
-            transmute(raw::Slice { data: self.buf as *const u8, len: self.len })
+            let i = self.i.lock();
+            transmute(raw::Slice { data: i.buf as *const u8, len: i.len })
         }
     }
 
     pub fn writestructref<T>(&mut self, offset: uint, t: &T) {
-        let lock = unsafe { (*self.lock).lock() };
+        let i = self.i.lock();
 
-        if offset + size_of::<T>() > self.len {
+        if offset + size_of::<T>() > i.cap {
             panic!("write past end of buffer!")
         }
 
-        unsafe { copy_memory((self.buf as uint + offset) as *mut u8, transmute(t), size_of::<T>()); }        
+        unsafe { copy_memory((i.buf as uint + offset) as *mut u8, transmute(t), size_of::<T>()); }        
     }
 
     pub fn writestruct<T>(&mut self, offset: uint, t: T) {
-        let lock = unsafe { (*self.lock).lock() };
-
-        if offset + size_of::<T>() > self.len {
-            panic!("write past end of buffer!")
-        }
-
-        unsafe { copy_memory((self.buf as uint + offset) as *mut u8, transmute(&t), size_of::<T>()); }
+        self.writestructref(offset, &t);
     }
 
     pub fn readstruct<T: NoPointers>(&self, offset: uint) -> T {
@@ -203,26 +163,18 @@ impl RawMessage {
 
     pub unsafe fn readstructunsafe<T>(&self, offset: uint) -> T {
         let mut out: T = uninitialized::<T>();
-
-        if offset + size_of::<T>() > self.len {
-            panic!("read past end of buffer!")
-        }
-
-        // Yeah, I had a little brain fart and things got out of hand here. I think
-        // copy_memory's count argument is the multiple of size_of::<T>. So I ended
-        // up doing u8, but maybe one day make this look more pretty.
-        let ptr: *mut u8 = transmute_copy(&&out);
-        copy_memory(ptr, (self.buf as uint + offset) as *const u8, size_of::<T>());
-
+        self.readstructunsaferef(offset, &mut out);
         out
     }
 
     pub unsafe fn readstructunsaferef<T>(&self, offset: uint, t: &mut T) {
-        if offset + size_of::<T>() > self.len {
+        let i = self.i.lock();
+
+        if offset + size_of::<T>() > i.cap {
             panic!("read past end of buffer!")
         }
 
-        copy_memory(t, (self.buf as uint + offset) as *const T, size_of::<T>());
+        copy_memory(t, (i.buf as uint + offset) as *const T, size_of::<T>());
     }
 
     pub fn writeu8(&mut self, offset: uint, value: u8) { self.writestruct(offset, value); }

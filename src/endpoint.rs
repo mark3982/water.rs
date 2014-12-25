@@ -19,6 +19,7 @@ use time::get_time;
 
 use timespec;
 use net::Net;
+use net::UNUSED_ID;
 use rawmessage::RawMessage;
 use message::Message;
 use message::MessagePayload;
@@ -81,8 +82,9 @@ struct Internal {
 
 pub struct Endpoint {
     i:          *mut Internal,
-    pub eid:    u64,
-    pub sid:    u64,
+    pub eid:    u64,    // endpoint
+    pub sid:    u64,    // net/system
+    pub gid:    u64,    // group 
     net:        Net,
 
 }
@@ -131,6 +133,7 @@ impl Clone for Endpoint {
                 i:      self.i,
                 eid:    self.eid,
                 sid:    self.sid,
+                gid:    self.gid,
                 net:    self.net.clone(),
             }
         }
@@ -161,6 +164,7 @@ impl Endpoint {
             i:      i,
             eid:    eid,
             sid:    sid,
+            gid:    UNUSED_ID,
             net:    net,
         }
     }
@@ -185,7 +189,7 @@ impl Endpoint {
     pub fn give(&mut self, msg: &Message) {
         unsafe {
             // only if it is addressed to us or to anyone
-            if self.eid == msg.dsteid || msg.dsteid == 0 {
+            if (self.eid == msg.dsteid || msg.dsteid == 0) || (self.gid == msg.dsteid) {
                 if self.sid == msg.dstsid || msg.dstsid == 0 {
                     // TODO: add limit to prevent memory overflow
                     let lock = (*self.i).lock.lock();

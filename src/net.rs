@@ -26,6 +26,16 @@ use tcp;
 use tcp::TcpBridgeListener;
 use tcp::TcpBridgeConnector;
 
+// We use this to be able to easily, but maybe dangerously
+// change the actual type that ID represents. Hopefully,
+// any dangerous change will produce compile errors!
+pub type ID = u64;
+
+// This is the ID that is considered unused and to comply
+// with the specification it should _not_ be used to send
+// messages across the network even though it may work.
+pub const UNUSED_ID: ID = !0u64;
+
 struct Internal {
     lock:           Mutex<uint>,
     endpoints:      Vec<Endpoint>,

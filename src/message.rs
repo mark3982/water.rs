@@ -106,13 +106,79 @@ impl Message {
         }
     }
 
-    pub fn get_rawref(&mut self) -> &mut RawMessage {
+    pub fn get_rawmutref(&mut self) -> &mut RawMessage {
         match self.payload {
             MessagePayload::Raw(ref mut msg) => {
                 msg
             },
             _ => {
                 panic!("message was not type raw! [consider checking type]")
+            }
+        }
+    }
+
+    pub fn get_clonemutref(&mut self) -> &mut CloneMessage {
+        match self.payload {
+            MessagePayload::Clone(ref mut msg) => {
+                msg
+            },
+            _ => {
+                panic!("message was not type clone! [consider checking type]")
+            }
+        }
+    }
+
+    pub fn get_syncmutref(&mut self) -> &mut SyncMessage {
+        match self.payload {
+            MessagePayload::Sync(ref mut msg) => {
+                msg
+            },
+            _ => {
+                panic!("message was not type sync! [consider checking type]")
+            }
+        }
+    }
+
+    pub fn get_rawref(&self) -> &RawMessage {
+        match self.payload {
+            MessagePayload::Raw(ref msg) => {
+                msg
+            },
+            _ => {
+                panic!("message was not type raw! [consider checking type]")
+            }
+        }
+    }
+
+    pub fn get_cloneref(&self) -> &CloneMessage {
+        match self.payload {
+            MessagePayload::Clone(ref msg) => {
+                msg
+            },
+            _ => {
+                panic!("message was not type clone! [consider checking type]")
+            }
+        }
+    }
+
+    pub fn get_syncref(&self) -> &SyncMessage {
+        match self.payload {
+            MessagePayload::Sync(ref msg) => {
+                msg
+            },
+            _ => {
+                panic!("message was not type sync! [consider checking type]")
+            }
+        }
+    }
+
+    pub fn get_clone(self) -> CloneMessage {
+        match self.payload {
+            MessagePayload::Clone(msg) => {
+                msg
+            },
+            _ => {
+                panic!("message was not type clone! [consider checking type]")
             }
         }
     }
@@ -187,6 +253,21 @@ impl Message {
             payload: payload,
         }
     }
+
+    pub fn is_type<T: Send + 'static>(&self) -> bool {
+        if self.is_sync() && self.get_syncref().is_type::<T>() {
+            return true;
+        }
+
+        self.is_clone();
+
+        panic!("BUG BUG BUG");
+        //if self.is_clone() && self.get_clone().is_type::<T>() {
+        //    return true;
+        //}
+
+        false
+    }
 }
 
 impl Clone for CloneMessage {
@@ -212,6 +293,17 @@ impl CloneMessage {
             hash:       hash,
             payload:    rmsg
         }        
+    }
+
+    pub fn is_type<T: Send + 'static>(&self) -> bool {
+        let tyid = TypeId::of::<T>();
+        let hash = tyid.hash();
+
+        if hash != self.hash {
+            return false;
+        }
+
+        return true;
     }
 
     pub fn get_payload<T: Send + Clone + 'static>(self) -> T {

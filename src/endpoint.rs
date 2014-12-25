@@ -6,6 +6,7 @@ use std::sync::atomic;
 use std::ptr;
 use std::rt::heap::allocate;
 use std::mem::size_of;
+use std::mem::align_of;
 use std::rt::heap::deallocate;
 use std::sync::Mutex;
 use std::sync::Condvar;
@@ -69,10 +70,10 @@ impl<T> IoResult<T> {
 }
 
 struct Internal {
-    lock:           Mutex<uint>,
     refcnt:         uint,
-    messages:       Vec<Message>,
+    lock:           Mutex<uint>,
     cwaker:         Condvar,
+    messages:       Vec<Message>,
     wakeupat:       Timespec,
     wakeinprogress: bool,
     limitpending:   uint,
@@ -144,22 +145,35 @@ impl Endpoint {
     pub fn new(sid: u64, eid: u64, net: Net) -> Endpoint {
         let i: *mut Internal;
         
+        println!("@endpoint::new");
+
         unsafe {
             // Allocate memory then manually and dangerously initialize each field. If
             // the structure changes and you forget to initialize it here then you have
             // potentially a bug.
-            i = allocate(size_of::<Internal>(), size_of::<uint>()) as *mut Internal;
+            i = allocate(size_of::<Internal>(), align_of::<uint>()) as *mut Internal;
+            println!("@alloc {:p} {}", i, size_of::<Internal>());
             (*i).lock = Mutex::new(0);
+            println!("@A");
             (*i).refcnt = 1;
+            println!("@B");
             (*i).messages = Vec::new();
+            println!("@C");
             (*i).cwaker = Condvar::new();
-            (*i).wakeupat = Timespec { nsec: 0i32, sec: 0x7fffffffffffffffi64 };
+            println!("@D");            
+            (*i).wakeupat = Timespec { nsec: 0i32, sec: 0x7fffffffffffffffi64 }; 
+            println!("@E");
             (*i).wakeinprogress = false;
+            println!("@F");
             (*i).limitpending = 1024; 
+            println!("@G");
             (*i).limitmemory = 1024 * 1024 * 512;
+            println!("@H");
             (*i).memoryused = 0;
+            println!("@@@here");
         }
         
+        println!("@@returning");
         Endpoint {
             i:      i,
             eid:    eid,

@@ -146,6 +146,26 @@ impl RawMessage {
         }
     }
 
+    pub fn write_from_slice<T>(&mut self, offset: uint, f: &[T]) {
+        let mut coffset = offset;
+
+        for i in f.iter() {
+            // Check if we are overunning the buffer.
+            if coffset + size_of::<T>() > self.cap {
+                panic!("write past end of buffer");
+            }
+
+            self.writestructref(coffset, i);
+
+            coffset += size_of::<T>();
+
+            // Push the set length forward if needed.
+            if coffset > self.len {
+                self.len = coffset;
+            }
+        }
+    }
+
     pub fn writestructref<T>(&mut self, offset: uint, t: &T) {
         let lock = unsafe { (*self.lock).lock() };
 

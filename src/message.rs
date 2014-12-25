@@ -152,12 +152,19 @@ impl Message {
         }
     }
 
+    pub fn new_fromraw(rmsg: RawMessage) -> Message {
+        Message {
+            srcsid: 0, srceid: 0,
+            dstsid: 0, dsteid: 0,
+            payload: MessagePayload::Raw(rmsg),
+        }
+    }
 
     pub fn new_raw(cap: uint) -> Message {
         Message {
             srcsid: 0, srceid: 0,
             dstsid: 0, dsteid: 0,
-            payload: MessagePayload::Raw(RawMessage::new(cap))
+            payload: MessagePayload::Raw(RawMessage::new(cap)),
         }
     }
 

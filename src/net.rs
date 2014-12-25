@@ -301,6 +301,21 @@ impl Net {
             }
         }
     }
+
+    pub fn get_neweid(&mut self) -> u64 {
+        unsafe {
+            let lock = (*self.i).lock.lock();
+            self.get_neweid_nolock()
+        }
+    }
+
+    fn get_neweid_nolock(&mut self) -> u64 {
+        unsafe {
+            let eid = (*self.i).hueid;
+            (*self.i).hueid += 1;     
+            eid       
+        }
+    }
     
     pub fn new_endpoint_withid(&mut self, eid: u64) -> Endpoint {
         unsafe {
@@ -318,15 +333,20 @@ impl Net {
         }
     }
 
+    pub fn add_endpoint(&mut self, ep: Endpoint) {
+        unsafe {
+            let lock = (*self.i).lock.lock();
+            (*self.i).endpoints.push(ep);
+        }
+    }
+
     pub fn new_endpoint(&mut self) -> Endpoint {
         unsafe {
             let ep: Endpoint;
             {
                 let lock = (*self.i).lock.lock();
 
-                ep = Endpoint::new(self.sid, (*self.i).hueid, self.clone_nolock());
-
-                (*self.i).hueid += 1;
+                ep = Endpoint::new(self.sid, self.get_neweid_nolock(), self.clone_nolock());
             }
 
             // Well, we can not clone the Endpoint while holding the

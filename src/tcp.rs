@@ -27,6 +27,7 @@ use std::io::{Acceptor, Listener};
     other problem is that all methods become locking but hopefully
     that will be okay here.
 */
+use time::Timespec;
 
 use endpoint::IoResult;
 use endpoint::Endpoint;
@@ -114,15 +115,34 @@ fn thread_rx(mut bridge: TcpBridgeListener, mut ep: Endpoint, mut stream: TcpStr
 }
 
 fn thread_tx(mut bridge: TcpBridgeListener, mut ep: Endpoint, mut stream: TcpStream) {
-    stream.write_be_u64(bridge.lock().net.sid);
+    stream.write_be_u64(bridge.lock().net.getserveraddr());
 
     loop {
-        let result = ep.recvorblock(Timespec { sec: 900i64, nsec: 0i64 })
+        let result = ep.recvorblock(Timespec { sec: 900i64, nsec: 0i32 });
+
         if result.is_err() {
             continue;
         }
 
         let msg = result.ok();
+
+        // We only forward raw messages. We do not support the ability to
+        // properly send sync and clone messages (both because they may
+        // contain pointers which we can not properly handle). And, the
+        // way they would be expected to work even if we could send them
+        // would not be able to work.
+        if !msg.is_raw() {
+            continue;
+        }
+
+        stream.write_u8(1u8);
+        stream.write_be_u64(msg.srcsid);
+        stream.write_be_u64(msg.srceid);
+        stream.write_be_u64(msg.dstsid);
+        stream.write_be_u64(msg.dsteid);
+
+        let rmsg = msg.get_raw();
+
     }
 }
 

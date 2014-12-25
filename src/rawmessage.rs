@@ -6,6 +6,7 @@ use std::intrinsics::transmute;
 use std::mem::transmute_copy;
 use std::mem::uninitialized;
 use std::intrinsics::copy_memory;
+use std::raw;
 
 // This is used to signify that a type is safe to
 // be written and read from a RawMessage across
@@ -163,6 +164,12 @@ impl RawMessage {
             if coffset > self.len {
                 self.len = coffset;
             }
+        }
+    }
+
+    pub fn as_slice(&mut self) -> &[u8] {
+        unsafe {
+            transmute(raw::Slice { data: self.buf as *const u8, len: self.len })
         }
     }
 

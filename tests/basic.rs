@@ -91,7 +91,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
                 c:  0x12,
             };
             //println!("thread sending something");
-            msgtosend.get_rawref().writestructref(0, &safestruct);
+            msgtosend.get_rawmutref().writestructref(0, &safestruct);
             ep.send(&msgtosend);
             sentmsgcnt += 1;
         }
@@ -102,7 +102,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
         b:  0x10,
         c:  0x10,
     };
-    msgtosend.get_rawref().writestructref(0, &safestruct);
+    msgtosend.get_rawmutref().writestructref(0, &safestruct);
     ep.send(&msgtosend);
 
     println!("thread[{}]: exiting", dbgid);

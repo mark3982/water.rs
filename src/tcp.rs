@@ -5,8 +5,9 @@ use std::intrinsics::transmute;
 use std::io::IoError;
 use std::result::Result;
 use std::vec::Vec;
-use std::io::{TcpListener, TcpStream};
-use std::io::{Acceptor, Listener};
+use std::io::{TcpListener, TcpStream, Listener, Acceptor};
+use std::io::net::tcp::TcpAcceptor;
+//use std::io::net::tcp::TcpListener;
 use std::thread::Thread;
 
 /*
@@ -41,23 +42,24 @@ use net::Net;
 pub struct TerminateMessage;
 
 pub struct _TcpBridgeListener {
-    net:        Net,
-    host:       String,
-    port:       u16,
-    terminate:  bool,
+    net:                Net,
+    addr:               String,
+    terminate:          bool,
+    pub clientcount:    u64,
+    acceptor:           Option<TcpAcceptor>,
 
 }
 pub struct _TcpBridgeConnector {
-    net:        Net,
-    host:       String,
-    port:       u16,
-    ep:         Option<Endpoint>,
-    terminate:  bool,
-    gid:        ID,
+    net:            Net,
+    addr:           String,
+    ep:             Option<Endpoint>,
+    terminate:      bool,
+    gid:            ID,
+    pub connected:  bool,
 }
 
 impl _TcpBridgeConnector {
-    pub fn terminate(&mut self) {
+    pub fn xterminate(&mut self) {
         // Set termination flag to catch connection loop.
         self.terminate = true;
         if self.ep.is_none() {
@@ -196,10 +198,24 @@ fn thread_tx(mut ep: Endpoint, mut stream: TcpStream, sid: ID) {
 
 
 impl _TcpBridgeListener {
+    pub fn terminate(&mut self) {
+        self.terminate = true;
+        if self.acceptor.is_some() {
+            self.acceptor.as_mut().unwrap().close_accept();
+        }
+        // We have to exit because the RX, TX, and
+        // accept threads might try to take lock,
+        // and we will deadlock there.
+    }
+
     pub fn thread_accept(mut bridge: TcpBridgeListener) {
-        let addr = format!("{}:{}", bridge.lock().host, bridge.lock().port);
-        let listener = TcpListener::bind(addr.as_slice());
-        let mut acceptor = listener.listen();
+        let listener = TcpListener::bind(bridge.lock().addr.as_slice());
+        let mut acceptor = listener.listen().unwrap();
+
+        bridge.lock().acceptor = Option::Some(acceptor.clone());
+        if bridge.lock().terminate {
+            return;
+        }
 
         for stream in acceptor.incoming() {
             match stream {
@@ -221,17 +237,25 @@ impl _TcpBridgeListener {
                     Thread::spawn(move || { thread_rx(_ep, _stream) }).detach();
                     let _sid = bridge.lock().net.getserveraddr();
                     Thread::spawn(move || { thread_tx(ep, stream, _sid) }).detach();
+
+                    // TODO: make client count decrement on connection lost
+                    bridge.lock().clientcount += 1;
                 }
             }
         }
+
+        if bridge.lock().terminate {
+            return;
+        }
     }
 
-    pub fn new(net: &Net, host: String, port: u16) -> TcpBridgeListener {
+    pub fn new(net: &Net, addr: String) -> TcpBridgeListener {
         let n = Arc::new(Mutex::new(_TcpBridgeListener { 
-            net:        net.clone(),
-            host:       host,
-            port:       port,
-            terminate:  false,
+            acceptor:      Option::None,
+            net:           net.clone(),
+            addr:          addr,
+            terminate:     false,
+            clientcount:   0,
         }));
 
         let nclone = n.clone();
@@ -248,7 +272,7 @@ impl _TcpBridgeConnector {
         // blocking the calling thread. It should be easier to add
         // in blocking if that is desired.
         loop {
-            let result = TcpStream::connect(format!("{}:{}", bridge.lock().host, bridge.lock().port).as_slice());
+            let result = TcpStream::connect(bridge.lock().addr.as_slice());
 
             if result.is_err() {
                 // Just keep trying, unless instructed to terminate.
@@ -257,6 +281,8 @@ impl _TcpBridgeConnector {
                 }
                 continue;
             }
+
+            bridge.lock().connected = true;
 
             let stream = result.unwrap();
 
@@ -290,6 +316,8 @@ impl _TcpBridgeConnector {
             rxthread.join();
             txthread.join();
 
+            bridge.lock().connected = false;
+
             // The TX may have terminated the RX and we will make it
             // here. We need to check the terminate flag to see if 
             // we also need to exit.
@@ -299,14 +327,14 @@ impl _TcpBridgeConnector {
         }
     }
 
-    pub fn new(net: &Net, host: String, port: u16) -> TcpBridgeConnector {
+    pub fn new(net: &Net, addr: String) -> TcpBridgeConnector {
         let n = Arc::new(Mutex::new(_TcpBridgeConnector { 
             net:        net.clone(),
             terminate:  false,
             ep:         Option::None,
-            host:       host,
-            port:       port,
+            addr:       addr,
             gid:        UNUSED_ID,
+            connected:  false,
         }));
         let nclone = n.clone();
         let mainthread = Thread::spawn(move || { _TcpBridgeConnector::thread(nclone)});

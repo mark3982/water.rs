@@ -174,15 +174,15 @@ impl Net {
     // Listens for and accepts TCP connections from remote
     // networks and performs simple routing between the two
     // networks.
-    pub fn tcplisten(&self, host: String, port: u16) -> TcpBridgeListener {
-        tcp::_TcpBridgeListener::new(self, host, port)
+    pub fn tcplisten(&self, addr: String) -> TcpBridgeListener {
+        tcp::_TcpBridgeListener::new(self, addr)
     }
 
     // Tries to maintain a TCP connecton to the specified remote
     // network and performs simple routing between the two 
     // networks.
-    pub fn tcpconnect(&self, host: String, port: u16) -> TcpBridgeConnector {
-        tcp::_TcpBridgeConnector::new(self, host, port)
+    pub fn tcpconnect(&self, addr: String) -> TcpBridgeConnector {
+        tcp::_TcpBridgeConnector::new(self, addr)
     } 
 
     pub fn sendas(&self, rawmsg: &Message, frmsid: u64, frmeid: u64) {

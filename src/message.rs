@@ -259,12 +259,9 @@ impl Message {
             return true;
         }
 
-        self.is_clone();
-
-        panic!("BUG BUG BUG");
-        //if self.is_clone() && self.get_clone().is_type::<T>() {
-        //    return true;
-        //}
+        if self.is_clone() && self.get_cloneref().is_type::<T>() {
+            return true;
+        }
 
         false
     }

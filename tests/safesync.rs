@@ -60,8 +60,6 @@ fn syncio() {
     let eid = ep.eid;
     spawn(move || { funnyworker(netclone, 0, eid); });
 
-    let mut completedcnt: u32 = 0u32;
-
     let result = ep.recvorblock(Timespec { sec: 3, nsec: 0 });
 
     let msg: Arc<Foo> = result.ok().get_sync().get_payload();

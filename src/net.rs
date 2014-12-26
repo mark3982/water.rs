@@ -128,7 +128,7 @@ impl Net {
     // networks and performs simple routing between the two
     // networks.
     pub fn tcplisten(&self, addr: String) -> TcpBridgeListener {
-        tcp::listener::_TcpBridgeListener::new(self, addr)
+        tcp::listener::TcpBridgeListener::new(self, addr)
     }
 
     // Tries to maintain a TCP connecton to the specified remote

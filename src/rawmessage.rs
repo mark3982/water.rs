@@ -8,6 +8,7 @@ use std::mem::uninitialized;
 use std::intrinsics::copy_memory;
 use std::raw;
 use std::sync::Arc;
+use std;
 
 // This is used to signify that a type is safe to
 // be written and read from a RawMessage across
@@ -36,6 +37,7 @@ impl Internal {
         if cap == 0 {
             cap = 1;
         }
+
         Internal {
             len:        cap,
             cap:        cap,
@@ -50,7 +52,7 @@ impl Internal {
             buf:        unsafe { allocate(self.cap, size_of::<uint>() ) },
         };
 
-        //unsafe { copy_memory(i.buf, self.buf, self.cap); }
+        unsafe { copy_memory(i.buf, self.buf, self.cap); }
 
         i
     }
@@ -60,9 +62,9 @@ impl Internal {
             let nbuf = allocate(newcap, size_of::<uint>());
 
             if newcap <= self.cap {
-                //copy_memory(nbuf, self.buf, self.cap);
+                copy_memory(nbuf, self.buf, self.cap);
             } else {
-                //copy_memory(nbuf, self.buf, newcap);
+                copy_memory(nbuf, self.buf, newcap);
             }
 
             deallocate(self.buf, self.cap, size_of::<uint>());
@@ -96,7 +98,7 @@ impl RawMessage {
     pub fn new_fromstr(s: &str) -> RawMessage {
         let m = RawMessage::new(s.len());
         unsafe {
-            //copy_memory(m.i.lock().buf, *(transmute::<&&str, *const uint>(&s)) as *const u8, s.len());
+            copy_memory(m.i.lock().buf, *(transmute::<&&str, *const uint>(&s)) as *const u8, s.len());
         }
         m
     }
@@ -107,6 +109,10 @@ impl RawMessage {
 
     pub fn len(&self) -> uint {
         self.i.lock().len
+    }
+
+    pub fn getbufaddress(&self) -> uint {
+        self.i.lock().buf as uint
     }
 
     pub fn dup(&self) -> RawMessage {
@@ -150,7 +156,7 @@ impl RawMessage {
             panic!("write past end of buffer!")
         }
 
-        //unsafe { copy_memory((i.buf as uint + offset) as *mut u8, transmute(t), size_of::<T>()); }        
+        unsafe { copy_memory((i.buf as uint + offset) as *mut T, transmute(t), 1); }        
     }
 
     pub fn writestruct<T>(&mut self, offset: uint, t: T) {
@@ -178,7 +184,7 @@ impl RawMessage {
             panic!("read past end of buffer!")
         }
 
-        //copy_memory(t, (i.buf as uint + offset) as *const T, size_of::<T>());
+        copy_memory(t, (i.buf as uint + offset) as *const T, 1);
     }
 
     pub fn writeu8(&mut self, offset: uint, value: u8) { self.writestruct(offset, value); }

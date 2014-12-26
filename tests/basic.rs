@@ -17,6 +17,7 @@ use water::IoResult;
 use water::IoError;
 use water::IoErrorCode;
 
+use std::thread::Thread;
 use std::io::timer::sleep;
 use std::time::duration::Duration;
 use time::Timespec;
@@ -48,6 +49,8 @@ fn funnyworker(mut net: Net, dbgid: uint) {
 
     sleep(Duration::seconds(1));
 
+    let limit = 100u32;
+
     let mut sentmsgcnt: u32 = 0u32;
     let mut recvmsgcnt: u32 = 0u32;
 
@@ -61,7 +64,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     msgtosend.dstsid = 0;
     msgtosend.dsteid = 0;
 
-    while recvmsgcnt < 1001u32 {
+    while recvmsgcnt < (limit + 1) {
         // Read anything we can.
         loop { 
             //println!("thread[{}] recving", dbgid);
@@ -73,9 +76,10 @@ fn funnyworker(mut net: Net, dbgid: uint) {
                 break;
             }
 
+            //println!("thread[{}] reading struct", dbgid);
             let safestruct: SafeStructure = result.ok().get_raw().readstruct(0);
             if safestruct.a != 0x10 {
-                //println!("@@thread[{}] got message", dbgid);
+                //println!("@@thread[{}] got {}/{} messages", dbgid, recvmsgcnt, limit);
                 assert!(safestruct.a == safestruct.b as u64);
                 assert!(safestruct.c == 0x12);
                 recvmsgcnt += 1;
@@ -83,8 +87,8 @@ fn funnyworker(mut net: Net, dbgid: uint) {
         }
 
         // Send something.
-        if sentmsgcnt < 1000u32 {
-            println!("thread[{}] sending message", dbgid);
+        if sentmsgcnt < limit {
+            //println!("thread[{}] sending message", dbgid);
             let safestruct = SafeStructure {
                 a:  0x12345678,
                 b:  0x12345678,
@@ -99,13 +103,13 @@ fn funnyworker(mut net: Net, dbgid: uint) {
 
     let safestruct = SafeStructure {
         a:  0x10,
-        b:  0x10,
+        b:  dbgid as u32,
         c:  0x10,
     };
     msgtosend.get_rawmutref().writestructref(0, &safestruct);
     ep.send(&msgtosend);
 
-    println!("thread[{}]: exiting", dbgid);
+    println!("thread[{}]: exiting (sent buffer {})", dbgid, msgtosend.get_rawref().getbufaddress());
 }
 
 #[test]
@@ -120,7 +124,31 @@ fn rawmessage() {
 }
 
 #[test]
+fn rawmsgstress() {
+    let mut v: Vec<RawMessage> = Vec::new();
+
+    for i in range(0u, 10000u) {
+        let rm = RawMessage::new(32);
+        v.push(rm.dup());
+        v.push(rm);
+    }
+}
+
+#[test]
 fn basicio() {
+    // Try to repeat the test a number of times to hopefully
+    // catching anything that might be missed if you only run
+    // it once.
+    for u in range(0u, 20u) {
+        println!("making test");
+        let t = Thread::spawn(move || { _basicio(); });
+        t.join();
+    }
+}
+
+fn _basicio() {
+    println!("entered basicio");
+
     // Create net with ID 234.
     let mut net: Net = Net::new(234);
 
@@ -130,15 +158,21 @@ fn basicio() {
     let ep = net.new_endpoint();
     let mut completedcnt: u32 = 0u32;
 
+    println!("spawning threads");
     // Spawn threads.
+
+    let mut threadterm = [0u, 0u, 0u];
+
     let netclone = net.clone();
-    spawn(move || { funnyworker(netclone, 0); });
+    let ta = Thread::spawn(move || { funnyworker(netclone, 0); });
     let netclone = net.clone();
-    spawn(move || { funnyworker(netclone, 1); });
+    let tb = Thread::spawn(move || { funnyworker(netclone, 1); });
     let netclone = net.clone();
-    spawn(move || { funnyworker(netclone, 2); });
+    let tc = Thread::spawn(move || { funnyworker(netclone, 2); });
 
     let mut sectowait = 3i64;
+
+    println!("main: entering loop");
 
     loop {
         let result = ep.recvorblock(Timespec { sec: sectowait, nsec: 0 });
@@ -152,9 +186,18 @@ fn basicio() {
             panic!("timed out waiting for messages likely..");
         }
 
-        let safestruct: SafeStructure = result.ok().get_raw().readstruct(0);
+        //println!("main: got message");
+
+        let raw = result.ok().get_raw();
+        let safestruct: SafeStructure = raw.readstruct(0);
         if safestruct.a == 0x10 {
+            if threadterm[safestruct.b as uint] != 0 {
+                //panic!("got termination message from same thread twice!");
+            }
+            threadterm[safestruct.b as uint] = 1;
+
             completedcnt += 1;
+            println!("main: got termination message #{} from thread {} for buffer {}", completedcnt, safestruct.b, raw.getbufaddress());
             if completedcnt > 2 {
                 break;
             }
@@ -163,5 +206,9 @@ fn basicio() {
 }
 
 fn main() {
-    basicio();
+    loop {
+        println!("making test");
+        let t = Thread::spawn(move || { _basicio(); });
+        t.join();
+    }
 }

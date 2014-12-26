@@ -125,6 +125,13 @@ impl Internal {
 }
 
 impl Endpoint {
+    // Return the unique identifier for this endpoint. This will
+    // be unique except across process boundaries. This is the
+    // actual memory address of the internal structure.
+    pub fn id(&self) -> uint {
+        unsafe { transmute(&*self.i.lock()) }
+    }
+
     pub fn new(sid: u64, eid: u64, net: Net) -> Endpoint {
         Endpoint {
             i:      Arc::new(Mutex::new(Internal {
@@ -187,6 +194,7 @@ impl Endpoint {
         let mut i = self.i.lock();
 
         if !i.wakeinprogress {
+            //println!("ep.wakeonwaiter");
             i.cwaker.notify_all();
             i.wakeinprogress = true;
             true
@@ -265,6 +273,8 @@ impl Endpoint {
 
         let mut i = self.i.lock();
 
+        i.wakeinprogress = false;
+
         while i.messages.len() < 1 {
             // The wakeup thread will wake everyone up at or beyond
             // this specified time. Then anyone who needs to sleep
@@ -274,19 +284,28 @@ impl Endpoint {
                 i.wakeupat = when;
             }
 
+            //println!("ep.id:{:p} sleeping", &*i);
             i.cwaker.wait(&i);
+            //println!("ep.id:{:p} woke", &*i);
+            i.wakeinprogress = false;
 
             let ctime: Timespec = get_time();
 
             if ctime > when && i.messages.len() < 1 {
-                println!("{:p} NO MESSAGES", &*i);
+                //println!("{:p} NO MESSAGES", &*i);
+                // BugFix: Allow any other sleeping threads which will
+                // wake once we unlock this mutex to set their
+                // wake time. 
+                i.neverwakeme();
                 return IoResult::Err(IoError { code: IoErrorCode::TimedOut });
             }
         }
 
         // If another thread was sleeping too it will wake
-        // after we return and it will set the wake value.
-        i.wakeinprogress = false;
+        // after we return and it will set the wake value
+        // if it is sooner than this or any value set after
+        // this. Any other threads will wake as soon as `i`
+        // which is the mutex guard gets dropped.
         i.neverwakeme();
         i.recv()
     }

@@ -85,6 +85,7 @@ impl Net {
                 wokesomeone = false;
                 for ep in i.endpoints.iter_mut() {
                     if ctime > ep.getwaketime() {
+                        //println!("[waker] waking {}", ep.id());
                         if ep.wakeonewaiter() {
                             wokesomeone = true;
                         }

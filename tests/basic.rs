@@ -176,7 +176,7 @@ fn _basicio() {
 
     let mut sectowait = 6i64;
 
-    println!("main: entering loop");
+    println!("main: entering loop with ep.id:{}", ep.id());
 
     loop {
         let result = ep.recvorblock(Timespec { sec: sectowait, nsec: 0 });
@@ -193,7 +193,7 @@ fn _basicio() {
         let raw = result.ok().get_raw();
         let safestruct: SafeStructure = raw.readstruct(0);
 
-        println!("main: got message {}:{}:{}", safestruct.a, safestruct.b, safestruct.c);
+        //println!("main: got message {}:{}:{}", safestruct.a, safestruct.b, safestruct.c);
 
         if safestruct.a == 0x10 {
             if threadterm[safestruct.b as uint] != 0 {

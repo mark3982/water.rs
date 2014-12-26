@@ -220,7 +220,7 @@ impl Net {
                     if rawmsg.dsteid == 0 || rawmsg.dsteid == ep.geteid() {
                         ep.give(rawmsg);
                     }
-                }                
+                }
             },
             1 => {
                 // ourself only

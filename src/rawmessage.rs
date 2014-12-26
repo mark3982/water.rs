@@ -95,6 +95,12 @@ impl RawMessage {
         RawMessage {i:  Arc::new(Mutex::new(Internal::new(cap)))}
     }
 
+    pub fn dup(&self) -> RawMessage {
+        RawMessage {i:  Arc::new(Mutex::new(self.i.lock().dup()))}
+    }
+
+
+
     pub fn new_fromstr(s: &str) -> RawMessage {
         let m = RawMessage::new(s.len());
         unsafe {
@@ -113,12 +119,6 @@ impl RawMessage {
 
     pub fn getbufaddress(&self) -> uint {
         self.i.lock().buf as uint
-    }
-
-    pub fn dup(&self) -> RawMessage {
-        RawMessage {
-            i:          Arc::new(Mutex::new(self.i.lock().dup())),
-        }
     }
 
     pub fn resize(&mut self, newcap: uint) {

@@ -111,6 +111,7 @@ impl Internal {
             return IoResult::Err(IoError { code: IoErrorCode::NoMessages });
         }
 
+        //println!("ep[{:p}] message taken", self);
         let msg = self.messages.remove(0).unwrap();
 
         self.memoryused -= msg.cap();
@@ -160,12 +161,13 @@ impl Endpoint {
     pub fn give(&mut self, msg: &Message) {
         let mut i = self.i.lock();
 
+        //println!("ep[{:p}] thinking about taking message {:p}", &*i, msg);
         if (i.eid == msg.dsteid || msg.dsteid == 0) || (i.gid == msg.dsteid) {
             if i.sid == msg.dstsid || msg.dstsid == 0 {
+                //println!("ep[{:p}] took message {:p}", &*i, msg);
                 i.messages.push((*msg).clone());
                 i.memoryused += msg.cap();
                 drop(i);
-
                 self.wakeonewaiter();
                 return;                
             }
@@ -276,7 +278,8 @@ impl Endpoint {
 
             let ctime: Timespec = get_time();
 
-            if ctime > when {
+            if ctime > when && i.messages.len() < 1 {
+                println!("{:p} NO MESSAGES", &*i);
                 return IoResult::Err(IoError { code: IoErrorCode::TimedOut });
             }
         }

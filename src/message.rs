@@ -86,7 +86,7 @@ impl Message {
                 Message {
                     dstsid: self.dstsid, dsteid: self.dsteid,
                     srcsid: self.srcsid, srceid: self.srceid,
-                    payload: MessagePayload::Raw(msg.clone())
+                    payload: MessagePayload::Raw(msg.dup())
                 }
             },
             _ => {

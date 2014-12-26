@@ -64,7 +64,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     msgtosend.dstsid = 0;
     msgtosend.dsteid = 0;
 
-    while recvmsgcnt < (limit + 1) {
+    while recvmsgcnt < limit {
         // Read anything we can.
         loop { 
             //println!("thread[{}] recving", dbgid);
@@ -100,6 +100,10 @@ fn funnyworker(mut net: Net, dbgid: uint) {
             sentmsgcnt += 1;
         }
     }
+
+    //let mut msgtosend = Message::new_raw(32);
+    //msgtosend.dstsid = 0;
+    //msgtosend.dsteid = 0;
 
     let safestruct = SafeStructure {
         a:  0x10,
@@ -170,7 +174,7 @@ fn _basicio() {
     let netclone = net.clone();
     let tc = Thread::spawn(move || { funnyworker(netclone, 2); });
 
-    let mut sectowait = 3i64;
+    let mut sectowait = 6i64;
 
     println!("main: entering loop");
 
@@ -180,16 +184,17 @@ fn _basicio() {
         // It seems we need to wait just a bit I suppose for the threads
         // to actually get a message sent. Then after that we can read quite
         // fast.
-        sectowait = 1i64;
+        sectowait = 3i64;
 
         if result.is_err() {
             panic!("timed out waiting for messages likely..");
         }
 
-        //println!("main: got message");
-
         let raw = result.ok().get_raw();
         let safestruct: SafeStructure = raw.readstruct(0);
+
+        println!("main: got message {}:{}:{}", safestruct.a, safestruct.b, safestruct.c);
+
         if safestruct.a == 0x10 {
             if threadterm[safestruct.b as uint] != 0 {
                 //panic!("got termination message from same thread twice!");

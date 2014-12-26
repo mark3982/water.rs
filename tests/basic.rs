@@ -47,7 +47,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     // Create our endpoint.
     let ep: Endpoint = net.new_endpoint();
 
-    sleep(Duration::seconds(1));
+    //sleep(Duration::seconds(1));
 
     let limit = 100u32;
 

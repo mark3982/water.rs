@@ -175,7 +175,8 @@ impl Endpoint {
                 i.messages.push((*msg).clone());
                 i.memoryused += msg.cap();
                 drop(i);
-                self.wakeonewaiter();
+                if self.wakeonewaiter() {
+                }
                 return;                
             }
         }

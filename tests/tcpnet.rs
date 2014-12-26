@@ -48,7 +48,7 @@ fn funnyworker(mut net: Net, dbgid: uint, dsteid: u64) {
     println!("thread[{}]: exiting", dbgid);
 }
 
-//#[test]
+#[test]
 fn tcpio() {
     std::thread::Thread::spawn(move || {
         // Create two nets then link then with TCP.

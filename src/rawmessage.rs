@@ -16,7 +16,6 @@ use std::sync::Arc;
 pub trait NoPointers { }
 
 struct Internal {
-    refcnt:         uint,
     len:            uint,
     cap:            uint,
     buf:            *mut u8,
@@ -29,9 +28,11 @@ impl Drop for Internal {
 }
 
 impl Internal {
-    fn new(cap: uint) -> Internal {
+    fn new(mut cap: uint) -> Internal {
+        if cap == 0 {
+            cap = 1;
+        }
         Internal {
-            refcnt:     1,
             len:        cap,
             cap:        cap,
             buf:        unsafe { allocate(cap, size_of::<uint>()) },
@@ -40,13 +41,12 @@ impl Internal {
 
     fn dup(&self) -> Internal {
         let i = Internal {
-            refcnt:     1,
             len:        self.cap,
             cap:        self.cap,
             buf:        unsafe { allocate(self.cap, size_of::<uint>() ) },
         };
 
-        unsafe { copy_memory(i.buf, self.buf, self.cap); }
+        //unsafe { copy_memory(i.buf, self.buf, self.cap); }
 
         i
     }
@@ -56,9 +56,9 @@ impl Internal {
             let nbuf = allocate(newcap, size_of::<uint>());
 
             if newcap <= self.cap {
-                copy_memory(nbuf, self.buf, self.cap);
+                //copy_memory(nbuf, self.buf, self.cap);
             } else {
-                copy_memory(nbuf, self.buf, newcap);
+                //copy_memory(nbuf, self.buf, newcap);
             }
 
             deallocate(self.buf, self.cap, size_of::<uint>());
@@ -92,7 +92,7 @@ impl RawMessage {
     pub fn new_fromstr(s: &str) -> RawMessage {
         let m = RawMessage::new(s.len());
         unsafe {
-            copy_memory(m.i.lock().buf, *(transmute::<&&str, *const uint>(&s)) as *const u8, s.len());
+            //copy_memory(m.i.lock().buf, *(transmute::<&&str, *const uint>(&s)) as *const u8, s.len());
         }
         m
     }
@@ -146,7 +146,7 @@ impl RawMessage {
             panic!("write past end of buffer!")
         }
 
-        unsafe { copy_memory((i.buf as uint + offset) as *mut u8, transmute(t), size_of::<T>()); }        
+        //unsafe { copy_memory((i.buf as uint + offset) as *mut u8, transmute(t), size_of::<T>()); }        
     }
 
     pub fn writestruct<T>(&mut self, offset: uint, t: T) {
@@ -174,7 +174,7 @@ impl RawMessage {
             panic!("read past end of buffer!")
         }
 
-        copy_memory(t, (i.buf as uint + offset) as *const T, size_of::<T>());
+        //copy_memory(t, (i.buf as uint + offset) as *const T, size_of::<T>());
     }
 
     pub fn writeu8(&mut self, offset: uint, value: u8) { self.writestruct(offset, value); }

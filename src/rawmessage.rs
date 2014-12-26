@@ -29,6 +29,10 @@ impl Drop for Internal {
 
 impl Internal {
     fn new(mut cap: uint) -> Internal {
+        // This helps let sync and clone messages work. Since sometimes
+        // they may use a zero size type just for conveying a signal of
+        // some sort and the will try to allocate a message of zero bytes
+        // which will result in undefined behavior.
         if cap == 0 {
             cap = 1;
         }

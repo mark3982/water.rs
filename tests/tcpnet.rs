@@ -64,26 +64,11 @@ fn tcpio() {
         let mut connector = net2.tcpconnect(String::from_str("localhost:34200"));
 
         println!("waiting for connected");
-        while !connector.connected() {
-            // BURN SOME CPU BABY...
-        }
-
+        while !connector.connected() { }
         println!("waiting for client count > 0");
-        while listener.getclientcount() < 1 {
-            // BURN SOME CPU BABY...
-        }
-
-        // Wait for negotaited message.
-        println!("waiting for NegotiatedMessage..");
-        loop {
-            let result = ep2.recvorblock(Timespec { sec: 900i64, nsec: 0i32 });
-            if result.ok().get_clone().is_type::<tcp::NegotiatedMessage>() {
-                println!("got NegotiatedMessage");
-                break;
-            } else {
-                panic!("did not get NegotiatedMessage");
-            }
-        }
+        while listener.getclientcount() < 1 { }
+        println!("waiting for negotiation to complete");
+        while listener.getnegcount() < 1 { }
 
         println!("sending message");
         // Now, let us test sending a message from one

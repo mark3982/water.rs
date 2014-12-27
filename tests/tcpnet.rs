@@ -12,6 +12,7 @@ use water::Endpoint;
 use water::RawMessage;
 use water::NoPointers;
 use water::Message;
+use water::tcp;
 
 use std::rc::Rc;
 use std::sync::Arc;
@@ -60,10 +61,10 @@ fn tcpio() {
         // This will be asynchronous. So let us wait
         // until it actually completes.
         let mut listener = net1.tcplisten(String::from_str("localhost:34200"));
-        let connector = net2.tcpconnect(String::from_str("localhost:34200"));
+        let mut connector = net2.tcpconnect(String::from_str("localhost:34200"));
 
         println!("waiting for connected");
-        while !(connector.lock().connected) {
+        while !connector.connected() {
             // BURN SOME CPU BABY...
         }
 
@@ -72,12 +73,24 @@ fn tcpio() {
             // BURN SOME CPU BABY...
         }
 
+        // Wait for negotaited message.
+        println!("waiting for NegotiatedMessage..");
+        loop {
+            let result = ep2.recvorblock(Timespec { sec: 900i64, nsec: 0i32 });
+            if result.ok().get_clone().is_type::<tcp::NegotiatedMessage>() {
+                println!("got NegotiatedMessage");
+                break;
+            } else {
+                panic!("did not get NegotiatedMessage");
+            }
+        }
+
         println!("sending message");
         // Now, let us test sending a message from one
         // net to the other.
         let mut msg = Message::new_raw(32);
         msg.dstsid = 875;
-        msg.dsteid = 0;
+        msg.dsteid = 0; 
         ep1.send(&msg);
 
         println!("waiting for message that was sent");
@@ -86,7 +99,7 @@ fn tcpio() {
 
         println!("terminating listener and connector");
         listener.terminate();
-        connector.lock().terminate();
+        connector.terminate();
     });
 }
 

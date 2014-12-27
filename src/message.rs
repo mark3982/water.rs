@@ -18,6 +18,7 @@ pub struct Message {
     pub srceid:         u64,             // source endpoint id
     pub dstsid:         u64,             // destination server id
     pub dsteid:         u64,             // destination endpoint id
+    pub canloop:        bool,            // can loop back into sender?
     pub payload:        MessagePayload,  // actual payload
 }
 
@@ -46,6 +47,7 @@ impl Clone for Message {
         match self.payload {
             MessagePayload::Raw(ref msg) => {
                 Message {
+                    canloop: false,
                     srcsid: self.srcsid, srceid: self.srceid,
                     dstsid: self.dstsid, dsteid: self.dsteid,
                     payload: MessagePayload::Raw((*msg).clone())
@@ -53,6 +55,7 @@ impl Clone for Message {
             },
             MessagePayload::Clone(ref msg) => {
                 Message {
+                    canloop: false,
                     srcsid: self.srcsid, srceid: self.srceid,
                     dstsid: self.dstsid, dsteid: self.dsteid,
                     payload: MessagePayload::Clone((*msg).clone())
@@ -84,6 +87,7 @@ impl Message {
         match self.payload {
             MessagePayload::Raw(ref msg) => {
                 Message {
+                    canloop: self.canloop,
                     dstsid: self.dstsid, dsteid: self.dsteid,
                     srcsid: self.srcsid, srceid: self.srceid,
                     payload: MessagePayload::Raw(msg.dup())
@@ -220,6 +224,7 @@ impl Message {
 
     pub fn new_fromraw(rmsg: RawMessage) -> Message {
         Message {
+            canloop: false,
             srcsid: 0, srceid: 0,
             dstsid: 0, dsteid: 0,
             payload: MessagePayload::Raw(rmsg),
@@ -228,6 +233,7 @@ impl Message {
 
     pub fn new_raw(cap: uint) -> Message {
         Message {
+            canloop: false,
             srcsid: 0, srceid: 0,
             dstsid: 0, dsteid: 0,
             payload: MessagePayload::Raw(RawMessage::new(cap)),
@@ -239,6 +245,7 @@ impl Message {
         let payload = MessagePayload::Clone(CloneMessage::new(t));
 
         Message {
+            canloop: false,
             srcsid: 0, srceid: 0, dstsid: 0, dsteid: 0,
             payload: payload,
         }
@@ -249,6 +256,7 @@ impl Message {
         let payload = MessagePayload::Sync(SyncMessage::new(t));
 
         Message {
+            canloop: false,
             srcsid: 0, srceid: 0, dstsid: 0, dsteid: 0,
             payload: payload,
         }

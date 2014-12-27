@@ -136,7 +136,7 @@ impl Net {
     // network and performs simple routing between the two 
     // networks.
     pub fn tcpconnect(&self, addr: String) -> TcpBridgeConnector {
-        tcp::connector::_TcpBridgeConnector::new(self, addr)
+        tcp::connector::TcpBridgeConnector::new(self, addr)
     } 
 
     pub fn sendas(&self, rawmsg: &Message, frmsid: u64, frmeid: u64) {
@@ -188,10 +188,10 @@ impl Net {
         self.sendsync(msg);
     }
 
-    // A sync type message needs to be consumed because it
-    // can not be duplicated. It also needs special routing
-    // to handle sending it only to the local net which should
-    // have only threads running in this same process.
+    /// A sync type message needs to be consumed because it
+    /// can not be duplicated. It also needs special routing
+    /// to handle sending it only to the local net which should
+    /// have only threads running in this same process.
     pub fn sendsync(&self, msg: Message) {
         let mut i = self.i.lock();
 
@@ -212,14 +212,18 @@ impl Net {
         }
     }
 
-    fn send_internal(&self, rawmsg: &Message) {
-        match rawmsg.dstsid {
+    fn send_internal(&self, msg: &Message) {
+        match msg.dstsid {
             0 => {
                 // broadcast to everyone
                 let mut i = self.i.lock();
                 for ep in i.endpoints.iter_mut() {
-                    if rawmsg.dsteid == 0 || rawmsg.dsteid == ep.geteid() {
-                        ep.give(rawmsg);
+                    // Do not send to the endpoint that it originated from.
+                    if !msg.canloop && msg.srceid == ep.geteid() && msg.srcsid == ep.getsid() {
+                        continue;
+                    }
+                    if msg.dsteid == 0 || msg.dsteid == ep.geteid() {
+                        ep.give(msg);
                     }
                 }
             },
@@ -228,9 +232,13 @@ impl Net {
                 let mut i = self.i.lock();
                 let sid = i.sid;
                 for ep in i.endpoints.iter_mut() {
+                    // Do not send to the endpoint that it originated from.
+                    if !msg.canloop && msg.srceid == ep.geteid() && msg.srcsid == ep.getsid() {
+                        continue;
+                    }        
                     if ep.getsid() == sid {
-                        if rawmsg.dsteid == 0 || rawmsg.dsteid == ep.geteid() {
-                            ep.give(rawmsg);
+                        if msg.dsteid == 0 || msg.dsteid == ep.geteid() {
+                            ep.give(msg);
                         }
                     }
                 }
@@ -240,9 +248,13 @@ impl Net {
                 let mut i = self.i.lock();                    
                 for ep in i.endpoints.iter_mut() {
                     println!("trying to send {} to {}", dstsid, ep.getsid());
+                    // Do not send to the endpoint that it originated from.
+                    if !msg.canloop && msg.srceid == ep.geteid() && msg.srcsid == ep.getsid() {
+                        continue;
+                    }                    
                     if ep.getsid() == dstsid {
-                        if rawmsg.dsteid == 0 || rawmsg.dsteid == ep.geteid() {
-                            ep.give(rawmsg);
+                        if msg.dsteid == 0 || msg.dsteid == ep.geteid() {
+                            ep.give(msg);
                         }
                     }
                 }

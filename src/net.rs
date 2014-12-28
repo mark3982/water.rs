@@ -85,7 +85,6 @@ impl Net {
                 wokesomeone = false;
                 for ep in i.endpoints.iter_mut() {
                     if ctime > ep.getwaketime() {
-                        //println!("[waker] waking {}", ep.id());
                         if ep.wakeonewaiter() {
                             wokesomeone = true;
                         }
@@ -247,7 +246,6 @@ impl Net {
                 // specific server
                 let mut i = self.i.lock();                    
                 for ep in i.endpoints.iter_mut() {
-                    println!("trying to send {} to {}", dstsid, ep.getsid());
                     // Do not send to the endpoint that it originated from.
                     if !msg.canloop && msg.srceid == ep.geteid() && msg.srcsid == ep.getsid() {
                         continue;

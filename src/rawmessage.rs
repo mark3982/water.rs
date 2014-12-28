@@ -55,9 +55,7 @@ impl Internal {
         };
 
         unsafe { 
-            println!("$$$${}", *((self.buf as uint + 0) as *const u8));
             copy_memory(i.buf, self.buf, self.cap); 
-            println!("$$$${}", *((i.buf as uint + 0) as *const u8));
         }
 
         i

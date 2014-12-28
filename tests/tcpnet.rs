@@ -75,12 +75,31 @@ fn tcpio() {
         // net to the other.
         let mut msg = Message::new_raw(32);
         msg.dstsid = 875;
-        msg.dsteid = 0; 
+        msg.dsteid = 0;
+        {
+            let rawmsg = msg.get_rawmutref();
+            println!("raw buf pointer {}", rawmsg.id());
+            let slice = rawmsg.as_mutslice();
+            slice[0] = 13;
+            slice[1] = 34;
+            slice[2] = 56;
+            slice[3] = 78;
+        }
         ep1.send(&msg);
 
         println!("waiting for message that was sent");
         // Wait for the message to arrive.
-        ep2.recvorblock(Timespec { sec: 900i64, nsec: 0i32 });
+        let result = ep2.recvorblock(Timespec { sec: 900i64, nsec: 0i32 });
+
+        let rawmsg = result.ok().get_raw();
+        let slice = rawmsg.as_slice();
+
+        println!("id:{} {}:{}:{}:{}", rawmsg.id(), slice[0], slice[1], slice[2], slice[3]);
+
+        assert!(slice[0] == 0x12);
+        assert!(slice[1] == 0x34);
+        assert!(slice[2] == 0x56);
+        assert!(slice[3] == 0x78);
 
         println!("terminating listener and connector");
         listener.terminate();

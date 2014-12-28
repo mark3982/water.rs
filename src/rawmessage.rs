@@ -52,7 +52,11 @@ impl Internal {
             buf:        unsafe { allocate(self.cap, size_of::<uint>() ) },
         };
 
-        unsafe { copy_memory(i.buf, self.buf, self.cap); }
+        unsafe { 
+            println!("$$$${}", *((self.buf as uint + 0) as *const u8));
+            copy_memory(i.buf, self.buf, self.cap); 
+            println!("$$$${}", *((i.buf as uint + 0) as *const u8));
+        }
 
         i
     }
@@ -117,7 +121,7 @@ impl RawMessage {
         self.i.lock().len
     }
 
-    pub fn getbufaddress(&self) -> uint {
+    pub fn id(&self) -> uint {
         self.i.lock().buf as uint
     }
 
@@ -142,7 +146,14 @@ impl RawMessage {
         }
     }
 
-    pub fn as_slice(&mut self) -> &[u8] {
+    pub fn as_mutslice(&mut self) -> &mut [u8] {
+        unsafe {
+            let i = self.i.lock();
+            transmute(raw::Slice { data: i.buf as *const u8, len: i.len })
+        }        
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
         unsafe {
             let i = self.i.lock();
             transmute(raw::Slice { data: i.buf as *const u8, len: i.len })

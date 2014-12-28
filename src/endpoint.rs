@@ -112,7 +112,7 @@ impl Internal {
         }
 
         //println!("ep[{:p}] message taken", self);
-        let msg = self.messages.remove(0).unwrap();
+        let msg = self.messages.remove(0).unwrap().dup();
 
         self.memoryused -= msg.cap();
 

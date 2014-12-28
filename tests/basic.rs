@@ -113,7 +113,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     msgtosend.get_rawmutref().writestructref(0, &safestruct);
     ep.send(&msgtosend);
 
-    println!("thread[{}]: exiting (sent buffer {})", dbgid, msgtosend.get_rawref().getbufaddress());
+    println!("thread[{}]: exiting (sent buffer {})", dbgid, msgtosend.get_rawref().id());
 }
 
 #[test]
@@ -202,7 +202,7 @@ fn _basicio() {
             threadterm[safestruct.b as uint] = 1;
 
             completedcnt += 1;
-            println!("main: got termination message #{} from thread {} for buffer {}", completedcnt, safestruct.b, raw.getbufaddress());
+            println!("main: got termination message #{} from thread {} for buffer {}", completedcnt, safestruct.b, raw.id());
             if completedcnt > 2 {
                 break;
             }

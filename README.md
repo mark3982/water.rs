@@ -36,9 +36,6 @@ library and how to use it. I aim to have everything working and compiling on the
 Overview
 ==
 
-_This library is missing support for remote nets! However, I will talk about
-it like it has that support so you understand what to expect from it._
-
 Water is a library that provides a network like communication structure. It allows
 you to create just a local net for communication and join your local net if you
 desire to another remote net either on the same machine or a remote machine across
@@ -55,7 +52,7 @@ Each net has an ID and each endpoint has an ID. This means you can address:
 Some uses:
 
  * two processes to communicate on the same machine
- * two processes to communicate on different machines
+ * two processes to communicate on different machines (over network)
  * interprocess communication between threads
 
 Some advantages:
@@ -69,31 +66,26 @@ Some disadvantages:
  * asynchronous send (default) overload can result in excess memory usage and limits can
    cause lost messages
 
-Asynchronous Versus Synchronous
+Network Bridge Types Supported
 ===
 
-The `recv` and `send` calls are asynchronous and will not block but can fail. The failure is actually
-a feature. The `send` can have a partial failure where certain endpoints were not able to recieve because
-there message queue reached it's limit. A queue reaching its limits can be caused by the endpoint not being
-read enough or an overload situation in which it is impossible to read it fast enough which depends entirely
-on the situation.
+A bridge joins two nets to provide remote process (machine) or intra-process communication.
 
-The `recvorblock` and `sendorblock` calls are synchronous and will block until success or timeout. The 
-`sendorblock` call can partially fail if a timeout is reached and one or more endpoints may not have
-recieved the message because of their queues reaching limits.
+Currently, the library only provides support for the TCP bridge, but I plan to add others such as UDP which will sport the same cons and pros of it.
+
+Asynchronous Versus Synchronous Calls
+===
+
+The `recv` and `send` calls are asynchronous and will not block but can fail. The failure is actually a feature. The `send` can have a partial failure where certain endpoints were not able to recieve because there message queue reached it's limit. A queue reaching its limits can be caused by the endpoint not being read enough or an overload situation in which it is impossible to read it fast enough which depends entirely on the situation.
+
+The `recvorblock` and `sendorblock` calls are synchronous and will block until success or timeout. The  `sendorblock` call can partially fail if a timeout is reached and one or more endpoints may not have recieved the message because of their queues reaching limits.
 
 Limits
 ===
 
-A limit is specified to prevent memory system exhaustion which would eventually happen and result in
-run away memory usage that could leave the system unstable and unusable. To prevent this all endpoints
-have a default limit which may or may not be ideal for your application. You are encouraged to adjust
-this limit to your needs with `setlimitpending` where the value represents the maximum number of pending
-messages. This maximum number is not related to the memory consumed by the messages. To limit based on
-memory used in the incoming queue for each endpoint you should use `setlimitmemory`. The memory limit
-is a little misleading as message data is actually shared between endpoints. So a one megabyte message
-does not consume two megabyte for two endpoints but rather one megabyte plus roughly thirty-two bytes
-for each endpoint who recieves the message.
+_Limits have yet to actually be enforced in the latest version!_
+
+A limit is specified to prevent memory system exhaustion which would eventually happen and result in run away memory usage that could leave the system unstable and unusable. To prevent this all endpoints have a default limit which may or may not be ideal for your application. You are encouraged to adjust this limit to your needs with `setlimitpending` where the value represents the maximum number of pending messages. This maximum number is not related to the memory consumed by the messages. To limit based on memory used in the incoming queue for each endpoint you should use `setlimitmemory`. The memory limit is a little misleading as message data is actually shared between endpoints. So a one megabyte message does not consume two megabyte for two endpoints but rather one megabyte plus roughly thirty-two bytes for each endpoint who recieves the message.
 
 
 Examples
@@ -104,28 +96,23 @@ The most basic example is `basic.rs` which has multiple threads send messages to
 
 A good example of sync messages can be found in `safesync.rs`. It was named so because of the, hopefully, memory safe design of sending these messages. The intentions of sync messages are to be a replacement for channels which can be found in the standard library.
 
+Also, if you are looking for a network bridge example you can find one in `tcpnet.rs` which demonstrates using a TCP bridge to join two networks.
 
-Serialization Using Sync Messages
+Serialization Using Sync/Clone Messages
 ===
 
-The sync type message support is inteded to help replace the usage of channels from the standard Rust library. The sync messaes only support the sending of types with the `Send` trait and they can only be recieved by a single endpoint. You can however still broadcast a sync message to all endpoints on your local net but only one of them will actually get the message. At the time I see no straight forward or easy way to send `Send` types across process boundaries which would include remote machines.
+The sync/clone type message support is inteded to help replace the usage of channels from the standard Rust library. The sync/clone messages only support the sending of types with the `Send` trait and they can only be recieved by a single endpoint. You can however still broadcast a sync message to all endpoints on your local net but only one of them will actually get the message. A clone message can be recieved by many endpoints because it's contents are clonable.At the time I see no straight forward or easy way to send `Send` types across process boundaries which would include remote machines.
 
 _If you really need to send a structure across process boundaries or a structure that is not `Send` then you will have to rely on the raw message which is covered below._
 
-_A sync message contains an instance of a type that can not be cloned or duplicated and this restricts multiple endpoints from getting the same message. I am however looking into messages that can be cloned and this could be done internally by the endpoint when sending to multiple endpoints._
+_A sync message contains an instance of a type that can not be cloned or duplicated and this restricts multiple endpoints from getting the same message. For this use a clone message which is more flexible!_
 
 Serialization Using Raw Messages
 ===
 
-I am looking at including serialization support similar to JSON and HEX. However, at the moment you will have
-to rely on another library for serialization and write the output to a raw message structure. You can also
-easily and efficiently serialize structures with no pointers using `writestruct` and `readstruct`. 
+I am looking at including serialization support similar to JSON and HEX. However, at the moment you will have to rely on another library for serialization and write the output to a raw message structure. You can also easily and efficiently serialize structures with no pointers using `writestruct` and `readstruct`. 
 
-It is possible to serialize, with this library, structures with pointers using the `writestruct` and then reading them back with `readstructunsafe`  or ``readstructunsaferef` however firstly you just broke the memory safety of Rust (all bets are off). If you are lucky your message arrived on a thread in the same process as the
-thread that sent it and in this case if you used the pointer it _might_ work. A skilled programmer could make
-it work if he knew the exact circumstances however this is highly dangerous. If your message arrived into another separate process (on the same machine or remotely) your going to end up reading bad values, corrupting memory, or crashing your program. The point is serializing pointers directly is a very bad idea and the only
-one case were it would even be useful if it you did _not_ use the pointers or you only used them in the same
-process. However, I would recommend just not serializing pointers or at the least not using them. You have to be careful because some types like `Arc`, `Box`, `Rc`, and many others have pointers internally that are not visible to you the programmer. This makes these types unsuitable for serialization. You should try to use only the `writestruct` and `readstruct` and _only_ tag stuctures that you know for sure have no pointers.
+It is possible to serialize, with this library, structures with pointers using the `writestruct` and then reading them back with `readstructunsafe`  or ``readstructunsaferef` however firstly you just broke the memory safety of Rust (all bets are off). If you are lucky your message arrived on a thread in the same process as the thread that sent it and in this case if you used the pointer it _might_ work. A skilled programmer could make it work if he knew the exact circumstances however this is highly dangerous. If your message arrived into another separate process (on the same machine or remotely) your going to end up reading bad values, corrupting memory, or crashing your program. The point is serializing pointers directly is a very bad idea and the only one case were it would even be useful if it you did _not_ use the pointers or you only used them in the same process. However, I would recommend just not serializing pointers or at the least not using them. You have to be careful because some types like `Arc`, `Box`, `Rc`, and many others have pointers internally that are not visible to you the programmer. This makes these types unsuitable for serialization. You should try to use only the `writestruct` and `readstruct` and _only_ tag stuctures that you know for sure have no pointers.
 
 I also have included functions for reading and writing varying sized integer types such as `readu32` or `writeu32`. At the moment I support reading and writing signed and unsigned integers of sizes 32, 16, and 8 bits. This gives a safe way to build messages.
 

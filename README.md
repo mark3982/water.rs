@@ -51,6 +51,7 @@ Some uses:
  * two processes to communicate on the same machine
  * two processes to communicate on different machines (over network)
  * interprocess communication between threads
+ * simple network communication using a bridge (provides message oriented connection over TCP)
 
 Some advantages:
 
@@ -64,6 +65,8 @@ Some disadvantages:
    cause lost messages
 
 _Also an interesting trick is the ability to inject messages back into the same channel that you send them from by simply setting the `canloop` field of a message._
+
+_If you need a simple TCP connection this library might be useful since you can easily create two nets on each program and have them maintain a TCP connection between each other automatically. See `/tests/tcpnet.rs` for an example._
 
 Network Bridge Types Supported
 ===

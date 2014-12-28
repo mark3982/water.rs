@@ -28,7 +28,7 @@ struct Bar {
     a:      uint,
 }
 
-impl Sync for Foo { }
+unsafe impl Sync for Foo { }
 
 fn funnyworker(mut net: Net, dbgid: uint, dsteid: u64) {
     // Create our endpoint.
@@ -80,10 +80,10 @@ fn tcpio() {
             let rawmsg = msg.get_rawmutref();
             println!("raw buf pointer {}", rawmsg.id());
             let slice = rawmsg.as_mutslice();
-            slice[0] = 13;
-            slice[1] = 34;
-            slice[2] = 56;
-            slice[3] = 78;
+            slice[0] = 0x12;
+            slice[1] = 0x34;
+            slice[2] = 0x56;
+            slice[3] = 0x78;
         }
         ep1.send(&msg);
 

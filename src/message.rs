@@ -39,6 +39,9 @@ pub enum MessagePayload {
     Clone(CloneMessage),
 }
 
+unsafe impl Send for Message {}
+unsafe impl Send for CloneMessage {}
+
 impl Clone for Message {
     /// Will properly clone the message and respect the actual message type. This can fail
     /// with a panic if the actual message type does not support `clone()` therefore it is
@@ -97,6 +100,22 @@ impl Message {
                 panic!("message type can not be duplicated!");
             }
         }
+    }
+
+    pub fn dup_ifok(self) -> Message {
+        match self.payload {
+            MessagePayload::Raw(ref msg) => {
+                Message {
+                    canloop: self.canloop,
+                    dstsid: self.dstsid, dsteid: self.dsteid,
+                    srcsid: self.srcsid, srceid: self.srceid,
+                    payload: MessagePayload::Raw(msg.dup())
+                }
+            },
+            _ => {
+                self
+            }
+        }   
     }
 
     pub fn get_raw(self) -> RawMessage {

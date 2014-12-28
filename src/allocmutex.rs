@@ -33,9 +33,11 @@ fn main() {
 }
 */
 
-pub struct AllocMutex<T> {
+pub struct AllocMutex<T: Send> {
     m:  Mutex<*mut T>,
 }
+
+unsafe impl<T: Send + 'static> Send for AllocMutex<T> { }
 
 impl<T: Send> AllocMutex<T> {
     pub fn new(t: T) -> AllocMutex<T> {

@@ -14,6 +14,8 @@ pub struct SyncMessage {
     pub payload:        RawMessage,
 }
 
+unsafe impl Send for SyncMessage { }
+
 impl SyncMessage {
     pub fn get_payload<T: Send + 'static>(self) -> T {
         let rawmsg = self.payload;

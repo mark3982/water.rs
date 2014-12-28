@@ -27,7 +27,7 @@ struct Bar {
     a:      uint,
 }
 
-impl Sync for Foo { }
+unsafe impl Sync for Foo { }
 
 fn funnyworker(mut net: Net, dbgid: uint, dsteid: u64) {
     // Create our endpoint.

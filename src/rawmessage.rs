@@ -22,6 +22,8 @@ struct Internal {
     buf:            *mut u8,
 }
 
+unsafe impl Send for Internal{}
+
 impl Drop for Internal {
     fn drop(&mut self) {
         unsafe { deallocate(self.buf, self.cap, size_of::<uint>()); }
@@ -85,6 +87,8 @@ impl Internal {
 pub struct RawMessage {
     i:              Arc<Mutex<Internal>>,   
 }
+
+unsafe impl Send for RawMessage { }
 
 impl Clone for RawMessage {
     fn clone(&self) -> RawMessage {

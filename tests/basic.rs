@@ -17,6 +17,7 @@ use water::IoResult;
 use water::IoError;
 use water::IoErrorCode;
 
+use std::thread::JoinGuard;
 use std::thread::Thread;
 use std::io::timer::sleep;
 use std::time::duration::Duration;
@@ -43,16 +44,21 @@ struct SafeStructure {
 // recieving end violates the memory safety of Rust.
 impl NoPointers for SafeStructure {}
 
+const THREADCNT: uint = 3;
+
 fn funnyworker(mut net: Net, dbgid: uint) {
     // Create our endpoint.
     let ep: Endpoint = net.new_endpoint();
 
-    //sleep(Duration::seconds(1));
+    // Wait until the other endpoints are ready.
+    while net.getepcount() < THREADCNT + 1 { }
 
-    let limit = 100u32;
+    //sleep(Duration::seconds(3));
 
-    let mut sentmsgcnt: u32 = 0u32;
-    let mut recvmsgcnt: u32 = 0u32;
+    let limit = 100u;
+
+    let mut sentmsgcnt: uint = 0u;
+    let mut recvmsgcnt: uint = 0u;
 
     println!("thread[{}] started", dbgid);
 
@@ -64,7 +70,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     msgtosend.dstsid = 0;
     msgtosend.dsteid = 0;
 
-    while recvmsgcnt < limit {
+    while recvmsgcnt < limit * (THREADCNT - 1) && sentmsgcnt < limit {
         // Read anything we can.
         loop { 
             //println!("thread[{}] recving", dbgid);
@@ -78,25 +84,31 @@ fn funnyworker(mut net: Net, dbgid: uint) {
 
             //println!("thread[{}] reading struct", dbgid);
             let safestruct: SafeStructure = result.ok().get_raw().readstruct(0);
-            if safestruct.a != 0x10 {
-                //println!("@@thread[{}] got {}/{} messages", dbgid, recvmsgcnt, limit);
-                assert!(safestruct.a == safestruct.b as u64);
-                assert!(safestruct.c == 0x12);
+            if safestruct.b != 0x10 {
                 recvmsgcnt += 1;
+                //if dbgid == 2 {
+                //println!("@@thread[{}] got {}/{} messages", dbgid, recvmsgcnt, limit);
+                //}
+                assert!(safestruct.b == 0x12345678u32);
+                assert!(safestruct.c == 0x12u8);
             }
+            //println!("thread[{}] safestruct.b:{}", dbgid, safestruct.b);
         }
 
         // Send something.
         if sentmsgcnt < limit {
             //println!("thread[{}] sending message", dbgid);
             let safestruct = SafeStructure {
-                a:  0x12345678,
+                a:  dbgid as u64,
                 b:  0x12345678,
                 c:  0x12,
             };
             //println!("thread sending something");
-            msgtosend.get_rawmutref().writestructref(0, &safestruct);
-            ep.send(&msgtosend);
+            msgtosend.get_rawmutref().writestructref(0, &safestruct); 
+            let rby = ep.sendraw(&msgtosend);
+            if rby < THREADCNT {
+                panic!("send to only {} threads", rby);
+            }           
             sentmsgcnt += 1;
         }
     }
@@ -106,12 +118,12 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     //msgtosend.dsteid = 0;
 
     let safestruct = SafeStructure {
-        a:  0x10,
-        b:  dbgid as u32,
+        a:  dbgid as u64,
+        b:  0x10,
         c:  0x10,
     };
     msgtosend.get_rawmutref().writestructref(0, &safestruct);
-    ep.send(&msgtosend);
+    ep.sendraw(&msgtosend);
 
     println!("thread[{}]: exiting (sent buffer {})", dbgid, msgtosend.get_rawref().id());
 }
@@ -167,12 +179,13 @@ fn _basicio() {
 
     let mut threadterm = [0u, 0u, 0u];
 
-    let netclone = net.clone();
-    let ta = Thread::spawn(move || { funnyworker(netclone, 0); });
-    let netclone = net.clone();
-    let tb = Thread::spawn(move || { funnyworker(netclone, 1); });
-    let netclone = net.clone();
-    let tc = Thread::spawn(move || { funnyworker(netclone, 2); });
+    let mut threads: Vec<JoinGuard<()>> = Vec::new();
+
+    for i in range(0, THREADCNT) {
+        let netclone = net.clone();
+        println!("creating thread {}", i);
+        threads.push(Thread::spawn(move || { funnyworker(netclone, i); }));
+    }
 
     let mut sectowait = 6i64;
 
@@ -184,7 +197,7 @@ fn _basicio() {
         // It seems we need to wait just a bit I suppose for the threads
         // to actually get a message sent. Then after that we can read quite
         // fast.
-        sectowait = 3i64;
+        sectowait = 6i64;
 
         if result.is_err() {
             panic!("timed out waiting for messages likely..");
@@ -195,11 +208,11 @@ fn _basicio() {
 
         //println!("main: got message {}:{}:{}", safestruct.a, safestruct.b, safestruct.c);
 
-        if safestruct.a == 0x10 {
-            if threadterm[safestruct.b as uint] != 0 {
-                //panic!("got termination message from same thread twice!");
+        if safestruct.b == 0x10 {
+            if threadterm[safestruct.a as uint] != 0 {
+                panic!("got termination message from same thread twice!");
             }
-            threadterm[safestruct.b as uint] = 1;
+            threadterm[safestruct.a as uint] = 1;
 
             completedcnt += 1;
             println!("main: got termination message #{} from thread {} for buffer {}", completedcnt, safestruct.b, raw.id());

@@ -21,22 +21,34 @@ use time::Timespec;
 use time::get_time;
 
 use timespec;
+/// Here we implement and export the Endpoint and IoResult<T> which provide
+/// the core of the water library. These are to be some of the most used
+/// facilities when working with water.
+
 use net::Net;
 use net::ID;
 use net::UNUSED_ID;
 use rawmessage::RawMessage;
 use message::Message;
 use message::MessagePayload;
-
+ 
+/// This represents the exact failure code of the operation.
 pub enum IoErrorCode {
+    /// If the operation reaches the specified time to fail.
     TimedOut,
+    /// There were no messages for the operation to succeed with.
     NoMessages,
 }
 
+/// This is returned by IoResult<T> when a error has occured. Some errors are normal
+/// and expected. You can read the `code` field to determine the exact error.
 pub struct IoError {
     pub code:   IoErrorCode,
 }
 
+/// Represents a successful return, or an I/O error. This deviates from the
+/// standard library IoResult and should not be confused. It deviates to
+/// provide a more specialized error value to indicate the exact problem.
 pub enum IoResult<T> {
     Err(IoError),
     Ok(T),
@@ -87,13 +99,23 @@ struct Internal {
     net:            Net,
 }
 
+/// A endpoint represents a node on a net that can transmit and recieve messages.
+///
+/// The endpoint can transmit and recieve messages. It can be cloned so that multiple owners
+/// can share an instance of it, and it is thread safe to multiple threads at the same time.
+/// You can set the system identifier, endpoint identifier, and group identifier during run-time
+/// at any time you wish making the endpoint versitile and flexible. The endpoint provides
+/// synchronous and asynchronous I/O for `send` and `recv` method. It also has the ability to set
+/// limits to prevent memory exhaustion by it's internal buffers.
 pub struct Endpoint {
     i:          Arc<Mutex<Internal>>,
-
 }
 
 
 impl Clone for Endpoint {
+    /// This will clone the endpoint allowing a second owner to have access. This does not
+    /// duplicate the endpoint, but rather gives you a second handle to access it. This is
+    /// a common operation.
     fn clone(&self) -> Endpoint {
         Endpoint {
             i:          self.i.clone(),
@@ -101,17 +123,22 @@ impl Clone for Endpoint {
     }
 }
 
+/// Represents the internal state of the endpoint. This is protected by a Mutex externally. The
+/// methods here expect that an external locking mechanism will prevent multiple threads from
+/// entering at the same time.
 impl Internal {
+    /// Sets the wake up time to be so far in the future that it will never be woken.
     fn neverwakeme(&mut self) {
         self.wakeupat = Timespec { sec: 0x7fffffffffffffffi64, nsec: 0i32 };
     }
 
+    /// Takes one message from the queue and returns it. It also attempts to duplicate
+    /// the message if that is supported to prevent giving access to shared buffers.
     fn recv(&mut self) -> IoResult<Message> {
         if self.messages.len() < 1 {
             return IoResult::Err(IoError { code: IoErrorCode::NoMessages });
         }
 
-        //println!("ep[{:p}] message taken", self);
         let msg = self.messages.remove(0).unwrap().dup_ifok();
 
         self.memoryused -= msg.cap();
@@ -125,13 +152,15 @@ impl Internal {
 }
 
 impl Endpoint {
-    // Return the unique identifier for this endpoint. This will
-    // be unique except across process boundaries. This is the
-    // actual memory address of the internal structure.
+    /// Return the unique identifier for this endpoint. This will
+    /// be unique except across process boundaries. This is the
+    /// actual memory address of the internal structure.
     pub fn id(&self) -> uint {
         unsafe { transmute(&*self.i.lock()) }
     }
 
+    /// Create a new endpoint by specifying the system ID, endpoint ID, and the
+    /// network.
     pub fn new(sid: u64, eid: u64, net: Net) -> Endpoint {
         Endpoint {
             i:      Arc::new(Mutex::new(Internal {
@@ -150,22 +179,28 @@ impl Endpoint {
         }
     }
 
+    /// Get the time at which this endpoint should be woken. This is used to see when to
+    /// wake the endpoint by the wake thread when it is in blocking mode.
     pub fn getwaketime(&self) -> Timespec {
         let i = self.i.lock();
 
         i.wakeupat
     }
 
-    pub fn givesync(&mut self, msg: Message) {
+    /// (internal usage) Give the endpoint a sync message.
+    pub fn givesync(&mut self, msg: Message) -> bool {
         let mut i = self.i.lock();
         i.memoryused += msg.cap();
         i.messages.push(msg);
         drop(i);
 
         self.wakeonewaiter();
+
+        true
     }
 
-    pub fn give(&mut self, msg: &Message) {
+    /// (internal usage) Give the endpoint a raw message.
+    pub fn give(&mut self, msg: &Message) -> bool {
         let mut i = self.i.lock();
 
         //println!("ep[{:p}] thinking about taking message {:p}", &*i, msg);
@@ -177,11 +212,15 @@ impl Endpoint {
                 drop(i);
                 if self.wakeonewaiter() {
                 }
-                return;                
+                return true;
             }
         }
+
+        false
     }
 
+    /// Return true if the endpoint has messages that recv will not fail on getting. Beware
+    /// that is another threads call recv before you do that it may fail.
     pub fn hasmessages(&self) -> bool {
         if self.i.lock().messages.len() > 0 {
             true
@@ -190,7 +229,7 @@ impl Endpoint {
         }
     }
 
-    // Wake one thread waiting on this endpoint.
+    /// Wake one thread waiting on this endpoint.
     pub fn wakeonewaiter(&self) -> bool {
         let mut i = self.i.lock();
 
@@ -204,69 +243,82 @@ impl Endpoint {
         }
     }
 
+    /// Sets the limit for pending messages in the queue.
     pub fn setlimitpending(&mut self, limit: uint) {
         self.i.lock().limitpending = limit;
     }
 
+    /// Sets the maximum amount of memory messages in the queue may consume.
     pub fn setlimitmemory(&mut self, limit: uint) {
         self.i.lock().limitmemory = limit;
     }
 
+    /// Get the system/net identifier.
     pub fn getsid(&self) -> ID {
         self.i.lock().sid
     }
 
+    /// Get the endpoint identifier.
     pub fn geteid(&self) -> ID {
         self.i.lock().eid
     }
 
+    /// Get the group identifier (like the endpoint identifier).
     pub fn getgid(&self) -> ID {
         self.i.lock().gid
     }
 
+    /// Set the group identifier.
     pub fn setgid(&mut self, id: ID) {
         self.i.lock().gid = id;
     }
 
+    /// Set the system/net identifier.
     pub fn setsid(&mut self, id: ID) {
         self.i.lock().sid = id;
     }
 
+    /// Set the endpoint identifier.
     pub fn seteid(&mut self, id: ID) {
         self.i.lock().eid = id;
     }
 
-    pub fn send(&self, msg: &Message) {
+    /// Send a message of raw type.
+    pub fn sendraw(&self, msg: &Message) -> uint {
         let i = self.i.lock();
         let net = i.net.clone();
         let sid = i.sid;
         let eid = i.eid;
         drop(i);
-        net.sendas(msg, sid, eid);
+        net.sendas(msg, sid, eid)
     }
 
-    pub fn sendsync(&self, msg: Message) {
+    /// Send a sync message. This requires a special call since a 
+    /// sync message is unique and can not be cloned therefore we
+    /// must consume the argument passed to prevent the caller from
+    /// holding a copy or clone.
+    pub fn sendsync(&self, msg: Message) -> uint {
         let i = self.i.lock();
         let net = i.net.clone();
         let sid = i.sid;
         let eid = i.eid;
         drop(i);
-        net.sendsyncas(msg, sid, eid);
+        net.sendsyncas(msg, sid, eid)
     }
 
-    pub fn sendclone(&self, msg: &mut Message) {
+    /// Send a clone message. This takes a reference since it will
+    /// call clone on the message internally to produce a copy of
+    /// it.
+    pub fn sendclone(&self, msg: &mut Message) -> uint {
         let i = self.i.lock();
         let net = i.net.clone();
         let sid = i.sid;
         let eid = i.eid;
         drop(i);
-        net.sendcloneas(msg, sid, eid);
+        net.sendcloneas(msg, sid, eid)
     }
 
-    pub fn sendorblock(&self, msg: &Message) {
-        unimplemented!();
-    }
-
+    /// Recieve a message or block until the specifie duration expires then return an error condition.
     pub fn recvorblock(&self, duration: Timespec) -> IoResult<Message> {
         let mut when: Timespec = get_time();
 
@@ -311,6 +363,7 @@ impl Endpoint {
         i.recv()
     }
     
+    /// Recieve a message with out blocking and return an error condition if none.
     pub fn recv(&self) -> IoResult<Message> {
         self.i.lock().recv()
     }

@@ -3,6 +3,7 @@ use std::intrinsics::TypeId;
 
 use rawmessage::RawMessage;
 use syncmessage::SyncMessage;
+use clonemessage::CloneMessage;
 
 pub fn workaround_to_static_bug() {
     panic!("sync message was not correct type");
@@ -20,16 +21,6 @@ pub struct Message {
     pub dsteid:         u64,             // destination endpoint id
     pub canloop:        bool,            // can loop back into sender?
     pub payload:        MessagePayload,  // actual payload
-}
-
-/// A message that can be cloned but not copied, and can be shared with other threads.
-///
-/// This message _can_ be cloned and _can_ be recieved by multiple endpoints, but only
-/// on the local net. This message can not cross process boundaries and is sharable only
-/// with threads under the same process as the sender.
-pub struct CloneMessage {
-    pub hash:           u64,
-    pub payload:        RawMessage,
 }
 
 /// Helps `Message` become generic allowing it to represent multiple types of messages.
@@ -292,56 +283,4 @@ impl Message {
 
         false
     }
-}
-
-impl Clone for CloneMessage {
-    fn clone(&self) -> CloneMessage {
-        CloneMessage {
-            hash:       self.hash,
-            payload:    self.payload.clone(),
-        }
-    }
-}
-
-impl CloneMessage {
-    pub fn new<T: Send + Clone + 'static>(t: T) -> CloneMessage {
-        let tyid = TypeId::of::<T>();
-        let hash = tyid.hash();
-
-        // Write the structure into a raw message, and
-        // consume it in the process making it unsable.
-        let mut rmsg = RawMessage::new(size_of::<T>());
-        rmsg.writestruct(0, t);
-
-        CloneMessage {
-            hash:       hash,
-            payload:    rmsg
-        }        
-    }
-
-    pub fn is_type<T: Send + 'static>(&self) -> bool {
-        let tyid = TypeId::of::<T>();
-        let hash = tyid.hash();
-
-        if hash != self.hash {
-            return false;
-        }
-
-        return true;
-    }
-
-    pub fn get_payload<T: Send + Clone + 'static>(self) -> T {
-        let rawmsg = self.payload;
-
-        let tyid = TypeId::of::<T>();
-        let hash = tyid.hash();
-
-        if hash != self.hash {
-            panic!("clone message was not correct type");
-        }
-
-        let t: T = unsafe { rawmsg.readstructunsafe(0) };
-        t
-    }
-
 }

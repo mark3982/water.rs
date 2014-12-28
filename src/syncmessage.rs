@@ -17,6 +17,8 @@ pub struct SyncMessage {
 unsafe impl Send for SyncMessage { }
 
 impl SyncMessage {
+    /// Return the type contained in the sync message by consuming the
+    /// sync message so that it can no longer be used.
     pub fn get_payload<T: Send + 'static>(self) -> T {
         let rawmsg = self.payload;
 
@@ -31,6 +33,7 @@ impl SyncMessage {
         t
     }
 
+    /// Check if the type is contained. `is_type::<MyType>()`
     pub fn is_type<T: Send + 'static>(&self) -> bool {
         let tyid = TypeId::of::<T>();
         let hash = tyid.hash();
@@ -42,6 +45,8 @@ impl SyncMessage {
         return true;
     }
 
+    /// Create a new sync message by consuming the type passed making
+    /// that type unique where it can not be cloned or duplicated.
     pub fn new<T: Send + 'static>(t: T) -> SyncMessage {
         let tyid = TypeId::of::<T>();
         let hash = tyid.hash();

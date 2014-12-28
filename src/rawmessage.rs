@@ -10,10 +10,10 @@ use std::raw;
 use std::sync::Arc;
 use std;
 
-// This is used to signify that a type is safe to
-// be written and read from a RawMessage across
-// process and machine boundaries. This trait can
-// create dangerous code.
+/// This is used to signify that a type is safe to
+/// be written and read from a RawMessage across
+/// process and machine boundaries. This trait can
+/// create dangerous code.
 pub trait NoPointers { }
 
 struct Internal {
@@ -61,6 +61,14 @@ impl Internal {
         i
     }
 
+    fn setlen(&mut self, len: uint) {
+        if len > self.cap {
+            panic!("len:{} must be <= cap:{}", len, self.cap);
+        }
+
+        self.len = len;
+    }
+
     fn resize(&mut self, newcap: uint) {
         unsafe {
             let nbuf = allocate(newcap, size_of::<uint>());
@@ -89,6 +97,7 @@ pub struct RawMessage {
 unsafe impl Send for RawMessage { }
 
 impl Clone for RawMessage {
+    /// Duplicate the raw message creating a new one that _shares the buffer_.
     fn clone(&self) -> RawMessage {
         RawMessage {
             i:          self.i.clone(),
@@ -97,16 +106,19 @@ impl Clone for RawMessage {
 }
 
 impl RawMessage {
+    /// Create a new raw message with the specified capacity.
     pub fn new(cap: uint) -> RawMessage {
         RawMessage {i:  Arc::new(Mutex::new(Internal::new(cap)))}
     }
 
+    /// Duplicate the raw message creating a new one not sharing the buffer.
     pub fn dup(&self) -> RawMessage {
         RawMessage {i:  Arc::new(Mutex::new(self.i.lock().dup()))}
     }
 
-
-
+    /// Create a raw message from a &str type.
+    ///
+    /// `let rmsg = RawMessage:new_fromstr("Hello World");`
     pub fn new_fromstr(s: &str) -> RawMessage {
         let m = RawMessage::new(s.len());
         unsafe {
@@ -115,22 +127,36 @@ impl RawMessage {
         m
     }
 
+    /// Get the capacity.
     pub fn cap(&self) -> uint {
         self.i.lock().cap
     }
 
+    /// Set the length.
+    ///
+    /// The length must not exceed the capacity or it will panic.
+    pub fn setlen(&mut self, len: uint) {
+        self.i.lock().setlen(len);
+    }
+
+    /// Get the length.
     pub fn len(&self) -> uint {
         self.i.lock().len
     }
 
+    /// Get unique ID for this message for this process.
+    ///
+    /// The unique ID will differ across process boundaries.
     pub fn id(&self) -> uint {
         self.i.lock().buf as uint
     }
 
+    /// Resize the capacity of the message keeping the old contents or truncating them.
     pub fn resize(&mut self, newcap: uint) {
         self.i.lock().resize(newcap);
     }
 
+    /// Write into the buffer from a byte slice.
     pub fn write_from_slice(&mut self, mut offset: uint, f: &[u8]) {
         let mut i = self.i.lock();
 
@@ -148,6 +174,7 @@ impl RawMessage {
         }
     }
 
+    /// Return a reference to a mutable byte slice that can be used to alter the contents.
     pub fn as_mutslice(&mut self) -> &mut [u8] {
         unsafe {
             let i = self.i.lock();
@@ -155,6 +182,7 @@ impl RawMessage {
         }        
     }
 
+    /// Return a reference to a immutable byte slice.
     pub fn as_slice(&self) -> &[u8] {
         unsafe {
             let i = self.i.lock();
@@ -162,6 +190,9 @@ impl RawMessage {
         }
     }
 
+    /// Safely write a structure/value by reference into the buffer at the specified offet.
+    ///
+    /// The offset must not exceed the capacity. The length is not updated.
     pub fn writestructref<T>(&mut self, offset: uint, t: &T) {
         let i = self.i.lock();
 
@@ -172,24 +203,33 @@ impl RawMessage {
         unsafe { copy_memory((i.buf as uint + offset) as *mut T, transmute(t), 1); }        
     }
 
+    /// Safely write a structure/value by consuming it.
     pub fn writestruct<T>(&mut self, offset: uint, t: T) {
         self.writestructref(offset, &t);
     }
 
+    /// Read a structure only if it is marked as safe and return the value.
+    ///
+    /// This function is only intended to help keep you from having to use
+    /// unsafe code blocks. You can easily mark a structure as safe and
+    /// crash your program.
     pub fn readstruct<T: NoPointers>(&self, offset: uint) -> T {
         unsafe { self.readstructunsafe(offset) }
     }
 
+    /// Read a structure only if it is marked as safe into a mutable reference.
     pub fn readstructref<T: NoPointers>(&self, offset: uint, t: &mut T) {
         unsafe { self.readstructunsaferef(offset, t) };
     }
 
+    /// This is the same as readstruct except it is an unsafe call.
     pub unsafe fn readstructunsafe<T>(&self, offset: uint) -> T {
         let mut out: T = uninitialized::<T>();
         self.readstructunsaferef(offset, &mut out);
         out
     }
 
+    /// This is the same as readstructref except it is an unsafe call.
     pub unsafe fn readstructunsaferef<T>(&self, offset: uint, t: &mut T) {
         let i = self.i.lock();
 
@@ -200,16 +240,28 @@ impl RawMessage {
         copy_memory(t, (i.buf as uint + offset) as *const T, 1);
     }
 
+    /// Write a unsigned 8-bit value at the specified offset.
     pub fn writeu8(&mut self, offset: uint, value: u8) { self.writestruct(offset, value); }
+    /// Write a unsigned 16-bit value at the specified offset.
     pub fn writeu16(&mut self, offset: uint, value: u16) { self.writestruct(offset, value); }
+    /// Write a unsigned 32-bit value at the specified offset.
     pub fn writeu32(&mut self, offset: uint, value: u32) { self.writestruct(offset, value); }
+    /// Write a signed 8-bit value at the specified offset.
     pub fn writei8(&mut self, offset: uint, value: i8) { self.writestruct(offset, value); }
+    /// Write a signed 16-bit value at the specified offset.
     pub fn writei16(&mut self, offset: uint, value: i16) { self.writestruct(offset, value); }
+    /// Write a signed 32-bit value at the specified offset.
     pub fn writei32(&mut self, offset: uint, value: i32) { self.writestruct(offset, value); }
+    /// Read a unsigned 8-bit value at the specified offset.
     pub fn readu8(&self, offset: uint) -> u8 { unsafe { self.readstructunsafe(offset) } }
+    /// Read a unsigned 16-bit value at the specified offset.
     pub fn readu16(&self, offset: uint) -> u16 { unsafe { self.readstructunsafe(offset) } }
+    /// Read a unsigned 32-bit value at the specified offset.
     pub fn readu32(&self, offset: uint) -> u32 { unsafe { self.readstructunsafe(offset) } }
+    /// Read a signed 8-bit value at the specified offset.
     pub fn readi8(&self, offset: uint) -> i8 { unsafe { self.readstructunsafe(offset) } }
+    /// Read a signed 16-bit value at the specified offset.
     pub fn readi16(&self, offset: uint) -> i16 { unsafe { self.readstructunsafe(offset) } }
+    /// Read a signed 32-bit value at the specified offset.
     pub fn readi32(&self, offset: uint) -> i32 { unsafe { self.readstructunsafe(offset) } }
 }

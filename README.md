@@ -36,10 +36,7 @@ library and how to use it. I aim to have everything working and compiling on the
 Overview
 ==
 
-Water is a library that provides a network like communication structure. It allows
-you to create just a local net for communication and join your local net if you
-desire to another remote net either on the same machine or a remote machine across
-a network.
+Water is a library that provides a network like communication structure. It is intended to replace channels. It allows you to create just a local net for communication and join your local net if you desire to another remote net either on the same machine or a remote machine across a network. It can also be used just to communicate between two threads! 
 
 The endpoint is a reciever and sender of messages and resides on a specific net.
 Each net has an ID and each endpoint has an ID. This means you can address:
@@ -65,6 +62,8 @@ Some disadvantages:
  * more attention must be paid not to overload a network depending on your usage
  * asynchronous send (default) overload can result in excess memory usage and limits can
    cause lost messages
+
+_Also an interesting trick is the ability to inject messages back into the same channel that you send them from by simply setting the `canloop` field of a message._
 
 Network Bridge Types Supported
 ===

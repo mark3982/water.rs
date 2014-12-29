@@ -18,8 +18,11 @@ unsafe impl Send for SyncMessage { }
 
 impl SyncMessage {
     /// Return the type contained in the sync message by consuming the
-    /// sync message so that it can no longer be used.
-    pub fn get_payload<T: Send + 'static>(self) -> T {
+    /// sync message so that it can no longer be used. 
+
+    /// _There is no contraint on `T` to be Send because the type is 
+    /// checked using the hash._
+    pub fn get_payload<T: 'static>(self) -> T {
         let rawmsg = self.payload;
 
         let tyid = TypeId::of::<T>();

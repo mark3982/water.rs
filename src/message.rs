@@ -14,6 +14,33 @@ pub fn workaround_to_static_bug() {
 /// This structure contains the actual message data. It exposes
 /// the source and destination fields, but the actual message payload
 /// must be accessed using the `payload` field.
+///
+/// A message can, currently, be of three types. It can by a raw, sync,
+/// or clone. The sync and clone internaly are actually raw messages but
+/// they provide support for building the raw message containing the type
+/// instance and provide additional safety than using the raw type alone.
+///
+/// To be perfectly correct when you have a message you should first check
+/// the type. If it is a raw message you will need to extract the raw message
+/// instance and work with it's byte stream.
+///
+/// If the type is clone or sync you should use `is_type` and `unwraptype`. The
+/// `unwraptype` will panic if the expected type is not the type contained in the
+/// message. This panic is the only sane way to handle this situation. I may implement
+/// a Result enum later if this is desired. If you use `is_type` you can check for
+/// the type of the message and prevent any panic from `unwraptype`.
+/// ```
+///     let result = endpoint.recvorblock( Timespec { sec: 5i64, nsec: 0i32 } );
+///     if result.is_err() { try_again_or_quit; }
+///     let message = result.ok();
+///     if !message.is_sync() && !message.is_clone() { maybe_check_for_raw; }
+///     if message.is_type::<Apple>() {
+///         let apple: Apple = message.unwraptype();
+///     }
+///     if message.is_type::<Grape>() {
+///         let grape: Grape = message.unwraptype();
+///     }
+/// ```
 pub struct Message {
     pub srcsid:         u64,             // source server id
     pub srceid:         u64,             // source endpoint id
@@ -93,6 +120,11 @@ impl Message {
         }
     }
 
+    /// Used mostly internally. It helps duplicate only for raw messages to
+    /// prevent having a buffer shared outside the system. Although having
+    /// a buffer shared outside the system could be useful it is not supported
+    /// at the moment. You may find implementing a type that provides this and
+    /// sending it as a sync or clone type will provide that functionality.
     pub fn dup_ifok(self) -> Message {
         match self.payload {
             MessagePayload::Raw(ref msg) => {
@@ -153,6 +185,8 @@ impl Message {
         }
     }
 
+    /// Gets a reference to the inner API for a raw message. This will panic
+    /// if the message is not a raw type.
     pub fn get_rawref(&self) -> &RawMessage {
         match self.payload {
             MessagePayload::Raw(ref msg) => {
@@ -164,6 +198,26 @@ impl Message {
         }
     }
 
+    /// For a sync or clone message type only this will extract the
+    /// instance of the type contained. You must be explicit about
+    /// the type contained. You can use `is_type::<T>` to check
+    /// the type.
+    pub fn typeunwrap<T: 'static>(self) -> T {
+        match self.payload {
+            MessagePayload::Clone(msg) => msg.get_payload::<T>(),
+            MessagePayload::Sync(msg) => msg.get_payload::<T>(),
+            _ => {
+                panic!("message was not clone or sync type! [consider checking type]")
+            }
+        }
+    }
+
+    /// Get a reference to the clone message API for this message without
+    /// consuming this message. This can be useful if you still need to
+    /// keep the message around maybe for resending.
+    ///
+    /// To get the type consider `typeunwrap::<T>()`.
+    /// To check the message type consider `is_sync`, `is_raw`, and `is_clone`.
     pub fn get_cloneref(&self) -> &CloneMessage {
         match self.payload {
             MessagePayload::Clone(ref msg) => {
@@ -175,6 +229,12 @@ impl Message {
         }
     }
 
+    /// Get a reference to the sync message API for this message without
+    /// consuming this message. This can be useful if you still need to
+    /// keep the message around maybe for resending.
+    ///
+    /// To get the type consider `typeunwrap::<T>()`.
+    /// To check the message type consider `is_sync`, `is_raw`, and `is_clone`.
     pub fn get_syncref(&self) -> &SyncMessage {
         match self.payload {
             MessagePayload::Sync(ref msg) => {
@@ -186,6 +246,12 @@ impl Message {
         }
     }
 
+    /// This works like `get_cloneref` except you consume the outer message
+    /// API and the clone message is returned. This is useful if you have
+    /// no need of the outer message layer and need to do more than just get
+    /// the type out.
+    ///
+    /// If you only need the type consider `typeunwrap::<T>()`.
     pub fn get_clone(self) -> CloneMessage {
         match self.payload {
             MessagePayload::Clone(msg) => {
@@ -197,6 +263,12 @@ impl Message {
         }
     }
 
+    /// This works like `get_syncref` except you consume the outer message
+    /// API and the sync message is returned. This is useful if you have
+    /// no need of the outer message layer and need to do more than just get
+    /// the type out.
+    ///
+    /// If you only need the type consider `typeunwrap::<T>()`.
     pub fn get_sync(self) -> SyncMessage {
         match self.payload {
             MessagePayload::Sync(msg) => {
@@ -208,6 +280,7 @@ impl Message {
         }
     }
 
+    /// Check if this is a clone message.
     pub fn is_clone(&self) -> bool {
         match self.payload {
             MessagePayload::Sync(_) => false,
@@ -216,6 +289,7 @@ impl Message {
         }
     }
 
+    /// Check if this is a raw message.
     pub fn is_raw(&self) -> bool {
         match self.payload {
             MessagePayload::Sync(_) => false,
@@ -224,6 +298,7 @@ impl Message {
         }
     }
 
+    /// Check if this is a sync message.
     pub fn is_sync(&self) -> bool {
         match self.payload {
             MessagePayload::Sync(_) => true,
@@ -232,6 +307,7 @@ impl Message {
         }
     }
 
+    /// Creates a new message from a raw message.
     pub fn new_fromraw(rmsg: RawMessage) -> Message {
         Message {
             canloop: false,
@@ -241,6 +317,7 @@ impl Message {
         }
     }
 
+    /// Helper function for creating a raw message with capacity specified.
     pub fn new_raw(cap: uint) -> Message {
         Message {
             canloop: false,
@@ -250,6 +327,7 @@ impl Message {
         }
     }
 
+    /// Helper function for creating a clone message with a type instance.
     pub fn new_clone<T: Send + Clone + 'static>(t: T) -> Message {
         // Create a message payload of type Sync.
         let payload = MessagePayload::Clone(CloneMessage::new(t));
@@ -261,6 +339,7 @@ impl Message {
         }
     }
 
+    /// Helper function for creating a sync message with a type instance.
     pub fn new_sync<T: Send + 'static>(t: T) -> Message {
         // Create a message payload of type Sync.
         let payload = MessagePayload::Sync(SyncMessage::new(t));
@@ -272,6 +351,8 @@ impl Message {
         }
     }
 
+    /// This will return `true` if the type is the same as expected,
+    /// `false` if it is not. 
     pub fn is_type<T: Send + 'static>(&self) -> bool {
         if self.is_sync() && self.get_syncref().is_type::<T>() {
             return true;

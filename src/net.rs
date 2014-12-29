@@ -48,6 +48,12 @@ struct Internal {
 /// and can all share memory which means that sync and clone messages
 /// can be sent to each other. To bridge two different nets you can use
 /// the bridges provided as listeners and connectors.
+///
+/// _You will normally not call most your methods directly on a `Net`, but
+/// instead on your `Endpoint` that you create. Some of the methods here are
+/// intended to only be used by `Endpoint` and not called directly. Hopefully
+/// in the future I can start removing these from being visible outside the
+/// crate._
 pub struct Net {
     i:      Arc<Mutex<Internal>>,
 }

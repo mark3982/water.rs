@@ -1,7 +1,3 @@
-#![allow(unused_imports)]
-#![allow(dead_code)]
-#![allow(unused_variables)]
-#![allow(unused_must_use)]
 #![allow(deprecated)]
 
 extern crate time;
@@ -11,16 +7,10 @@ use water::Net;
 use water::Endpoint;
 use water::RawMessage;
 use water::NoPointers;
-use water::MessagePayload;
 use water::Message;
-use water::IoResult;
-use water::IoError;
-use water::IoErrorCode;
 
 use std::thread::JoinGuard;
 use std::thread::Thread;
-use std::io::timer::sleep;
-use std::time::duration::Duration;
 use time::Timespec;
 
 // A safe structure is one that has no pointers and uses only primitive
@@ -60,7 +50,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     let mut sentmsgcnt: uint = 0u;
     let mut recvmsgcnt: uint = 0u;
 
-    println!("thread[{}] started", dbgid);
+    //println!("thread[{}] started", dbgid);
 
     // We only have to create it once in our situation here, since
     // once it is passed to the I/O sub-system in water it is 
@@ -125,7 +115,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     msgtosend.get_rawmutref().writestructref(0, &safestruct);
     ep.sendraw(&msgtosend);
 
-    println!("thread[{}]: exiting (sent buffer {})", dbgid, msgtosend.get_rawref().id());
+    //println!("thread[{}]: exiting (sent buffer {})", dbgid, msgtosend.get_rawref().id());
 }
 
 #[test]
@@ -143,7 +133,7 @@ fn rawmessage() {
 fn rawmsgstress() {
     let mut v: Vec<RawMessage> = Vec::new();
 
-    for i in range(0u, 10000u) {
+    for _ in range(0u, 10000u) {
         let rm = RawMessage::new(32);
         v.push(rm.dup());
         v.push(rm);
@@ -155,15 +145,15 @@ fn basicio() {
     // Try to repeat the test a number of times to hopefully
     // catching anything that might be missed if you only run
     // it once.
-    for u in range(0u, 20u) {
-        println!("making test");
+    for _ in range(0u, 20u) {
+        //println!("making test");
         let t = Thread::spawn(move || { _basicio(); });
         t.join();
     }
 }
 
 fn _basicio() {
-    println!("entered basicio");
+    //println!("entered basicio");
 
     // Create net with ID 234.
     let mut net: Net = Net::new(234);
@@ -174,22 +164,22 @@ fn _basicio() {
     let ep = net.new_endpoint();
     let mut completedcnt: u32 = 0u32;
 
-    println!("spawning threads");
+    //println!("spawning threads");
     // Spawn threads.
 
-    let mut threadterm = [0u, 0u, 0u];
+    let mut threadterm = [0u, ..THREADCNT];
 
     let mut threads: Vec<JoinGuard<()>> = Vec::new();
 
     for i in range(0, THREADCNT) {
         let netclone = net.clone();
-        println!("creating thread {}", i);
+        //println!("creating thread {}", i);
         threads.push(Thread::spawn(move || { funnyworker(netclone, i); }));
     }
 
     let mut sectowait = 6i64;
 
-    println!("main: entering loop with ep.id:{}", ep.id());
+    //println!("main: entering loop with ep.id:{}", ep.id());
 
     loop {
         let result = ep.recvorblock(Timespec { sec: sectowait, nsec: 0 });
@@ -215,18 +205,10 @@ fn _basicio() {
             threadterm[safestruct.a as uint] = 1;
 
             completedcnt += 1;
-            println!("main: got termination message #{} from thread {} for buffer {}", completedcnt, safestruct.b, raw.id());
+            //println!("main: got termination message #{} from thread {} for buffer {}", completedcnt, safestruct.b, raw.id());
             if completedcnt > 2 {
                 break;
             }
         }
-    }
-}
-
-fn main() {
-    loop {
-        println!("making test");
-        let t = Thread::spawn(move || { _basicio(); });
-        t.join();
     }
 }

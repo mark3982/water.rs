@@ -4,8 +4,9 @@
 #![allow(unused_must_use)]
 #![allow(deprecated)]
 
-#![crate_id = "water"]
-#![crate_type = "lib"]
+// Complains of unused attribute. No idea. -- kmcg3413@gmail.com
+//#![crate_id = "water"]
+//#![crate_type = "lib"]
 
 //! Provides synchronous and asynchronous messages passing intra-process, and inter-process using
 //! bridges. The messages can be of raw, clone, or sync type. Envisioned as a replacement for

@@ -40,11 +40,15 @@ pub enum IoErrorCode {
     NoMessages,
 }
 
+impl Copy for IoErrorCode { }
+
 /// This is returned by IoResult<T> when a error has occured. Some errors are normal
 /// and expected. You can read the `code` field to determine the exact error.
 pub struct IoError {
     pub code:   IoErrorCode,
 }
+
+impl Copy for IoError { }
 
 /// Represents a successful return, or an I/O error. This deviates from the
 /// standard library IoResult and should not be confused. It deviates to
@@ -293,10 +297,34 @@ impl Endpoint {
         net.sendas(msg, sid, eid)
     }
 
+    /// Easily sends a sync message by wrapping it into a
+    /// message. Using this function is the equivilent of:
+    /// 
+    /// `endpoint.sendsync(Message::new_sync(t))`
+    ///
+    /// This is a helper function to make sending easier
+    /// and code cleaner looking.
+    pub fn sendsyncbytype<T: Send>(&self, t: T) -> uint {
+        self.sendsync(Message::new_sync(t))
+    }
+
+    /// Easily sends a clone message by wrapping it into a
+    /// message. Using this function is the equivilent of:
+    /// 
+    /// `endpoint.sendsync(&Message::new_sync(t))`
+    ///
+    /// This is a helper function to make sending easier
+    /// and code cleaner looking.
+    pub fn sendclonebytype<T: Send + Clone>(&self, t: T) -> uint {
+        self.sendclone(&mut Message::new_clone(t))
+    }
+
     /// Send a sync message. This requires a special call since a 
     /// sync message is unique and can not be cloned therefore we
     /// must consume the argument passed to prevent the caller from
     /// holding a copy or clone.
+    ///
+    /// See `sendsyncbytype` for easier calling.
     pub fn sendsync(&self, msg: Message) -> uint {
         let i = self.i.lock();
         let net = i.net.clone();
@@ -309,6 +337,8 @@ impl Endpoint {
     /// Send a clone message. This takes a reference since it will
     /// call clone on the message internally to produce a copy of
     /// it.
+    ///
+    /// See `sendclonebytype` for easier calling.
     pub fn sendclone(&self, msg: &mut Message) -> uint {
         let i = self.i.lock();
         let net = i.net.clone();
@@ -319,6 +349,12 @@ impl Endpoint {
     }
 
     /// Recieve a message or block until the specifie duration expires then return an error condition.
+    /// ```
+    ///     let result = endpoint.recvorblock( Timespec { sec: 5i64, nsec: 0i32 } );
+    ///     if result.is_err() { do_something(); }
+    ///     let message = result.ok();
+    /// ```
+    /// See `Message` for API dealing with messages.
     pub fn recvorblock(&self, duration: Timespec) -> IoResult<Message> {
         let mut when: Timespec = get_time();
 

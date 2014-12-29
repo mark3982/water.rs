@@ -1,3 +1,43 @@
+Overview
+==
+
+Water is a library that provides a network like communication structure. It is intended to replace channels. It allows you to create just a local net for communication and join your local net if you desire to another remote net either on the same machine or a remote machine across a network. It can also be used just to communicate between two threads! 
+
+The endpoint is a reciever and sender of messages and resides on a specific net.
+Each net has an ID and each endpoint has an ID. This means you can address:
+
+ * specific endpoint on specific network
+ * specific endpoint on all networks
+ * any endpoint on a specific network
+ * any endpoint on any network
+
+Some uses:
+
+ * two processes to communicate on the same machine
+ * two processes to communicate on different machines (over network)
+ * intra-process communication between threads (channels)
+ * distributed system software
+ * replacement of channels
+
+Some advantages over channels:
+
+ * simpler and easier to manage a single endpoint than multiple channels
+ * special sync messages avalible to all recievers but only one can reciever (difficult to implement in channels)
+ * has no compiler dependancies (pure rust)
+ * builtin network communication support using bridges
+ * injection of messages back into endpoint (you can send a message to be recieved by the same endpoint)
+
+Some disadvantages:
+
+ * takes just a bit more code than channels due to the features provided but not much
+ * uses a thread per net to provide async I/O for endpoints at this time
+ * uses two threads per TCP bridge connector and three threadsper TCP bridge acceptor
+ * more complicated message sending due to need to specify destination (although for simple cases it can be ignored)
+
+Some planned features:
+ * priority of messages (higher priority serviced before lower) (also fail back for full endpoint queues)
+ * _see github issues for other things relavent to development_
+
 Using
 ==
 
@@ -30,43 +70,8 @@ To build manually (without Cargo) you can just clone this repository and build w
 
 _I recommend using Cargo as it makes managing and building dependancies very easy!_
 
-For more examples check out the `tests` directory in the source tree! Each test will demonstrate different parts of the
-library and how to use it. I aim to have everything working and compiling on the master branch. If you want bleeding edge you can select the `dev` branch or any other to find less tester but possibly newer features.
+For more examples check out the `tests` directory in the source tree! Each test will demonstrate different parts of the library and how to use it. I aim to have everything working and compiling on the master branch. If you want bleeding edge you can select the `dev` branch or any other to find less tester but possibly newer features.
 
-Overview
-==
-
-Water is a library that provides a network like communication structure. It is intended to replace channels. It allows you to create just a local net for communication and join your local net if you desire to another remote net either on the same machine or a remote machine across a network. It can also be used just to communicate between two threads! 
-
-The endpoint is a reciever and sender of messages and resides on a specific net.
-Each net has an ID and each endpoint has an ID. This means you can address:
-
- * specific endpoint on specific network
- * specific endpoint on all networks
- * any endpoint on a specific network
- * any endpoint on any network
-
-Some uses:
-
- * two processes to communicate on the same machine
- * two processes to communicate on different machines (over network)
- * interprocess communication between threads
- * simple network communication using a bridge (provides message oriented connection over TCP)
-
-Some advantages:
-
- * simple and easy to manage a single endpoint than multiple channels since you can send and recieve to multiple endpoints (threads) from a single endpoint
- * easy to segment loads by creating a separate network
-
-Some disadvantages:
-
- * more attention must be paid not to overload a network depending on your usage
- * asynchronous send (default) overload can result in excess memory usage and limits can
-   cause lost messages
-
-_Also an interesting trick is the ability to inject messages back into the same channel that you send them from by simply setting the `canloop` field of a message._
-
-_If you need a simple TCP connection this library might be useful since you can easily create two nets on each program and have them maintain a TCP connection between each other automatically. See `/tests/tcpnet.rs` for an example._
 
 Network Bridge Types Supported
 ===
@@ -80,7 +85,7 @@ Asynchronous Versus Synchronous Calls
 
 The `recv` and `send` calls are asynchronous and will not block but can fail. The failure is actually a feature. The `send` can have a partial failure where certain endpoints were not able to recieve because there message queue reached it's limit. A queue reaching its limits can be caused by the endpoint not being read enough or an overload situation in which it is impossible to read it fast enough which depends entirely on the situation.
 
-The `recvorblock` and `sendorblock` calls are synchronous and will block until success or timeout. The  `sendorblock` call can partially fail if a timeout is reached and one or more endpoints may not have recieved the message because of their queues reaching limits.
+The `recvorblock` call is synchronous and will block until success or timeout.
 
 Limits
 ===
@@ -100,23 +105,21 @@ A good example of sync messages can be found in `safesync.rs`. It was named so b
 
 Also, if you are looking for a network bridge example you can find one in `tcpnet.rs` which demonstrates using a TCP bridge to join two networks.
 
-Serialization Using Sync/Clone Messages
+Documentation
 ===
 
-The sync/clone type message support is inteded to help replace the usage of channels from the standard Rust library. The sync/clone messages only support the sending of types with the `Send` trait and they can only be recieved by a single endpoint. You can however still broadcast a sync message to all endpoints on your local net but only one of them will actually get the message. A clone message can be recieved by many endpoints because it's contents are clonable.At the time I see no straight forward or easy way to send `Send` types across process boundaries which would include remote machines.
+You can find some documentation hosted at, http://kmcg3413.net/water.rs/doc/ . This should be kept up to date
+with the master branch and the https://crates.io/water repository. You should also be able to generate documentation locally by cloning this repository and then doing `rustdoc ./src/lib.rs` which will create a doc sub-directory containing the HTML documentation.
 
-_If you really need to send a structure across process boundaries or a structure that is not `Send` then you will have to rely on the raw message which is covered below._
-
-_A sync message contains an instance of a type that can not be cloned or duplicated and this restricts multiple endpoints from getting the same message. For this use a clone message which is more flexible!_
-
-Serialization Using Raw Messages
+Sync/Clone/Raw Messages
 ===
 
-I am looking at including serialization support similar to JSON and HEX. However, at the moment you will have to rely on another library for serialization and write the output to a raw message structure. You can also easily and efficiently serialize structures with no pointers using `writestruct` and `readstruct`. 
+There are three different messages types. The easiest to use are the sync and clone. The sync is essentially
+a specialized version of clone. The clone messages requires the type being sent to implement the `Clone` trait because it can be sent to multiple endpoints and each endpoint needs a clone of the instance of the type.
 
-It is possible to serialize, with this library, structures with pointers using the `writestruct` and then reading them back with `readstructunsafe`  or ``readstructunsaferef` however firstly you just broke the memory safety of Rust (all bets are off). If you are lucky your message arrived on a thread in the same process as the thread that sent it and in this case if you used the pointer it _might_ work. A skilled programmer could make it work if he knew the exact circumstances however this is highly dangerous. If your message arrived into another separate process (on the same machine or remotely) your going to end up reading bad values, corrupting memory, or crashing your program. The point is serializing pointers directly is a very bad idea and the only one case were it would even be useful if it you did _not_ use the pointers or you only used them in the same process. However, I would recommend just not serializing pointers or at the least not using them. You have to be careful because some types like `Arc`, `Box`, `Rc`, and many others have pointers internally that are not visible to you the programmer. This makes these types unsuitable for serialization. You should try to use only the `writestruct` and `readstruct` and _only_ tag stuctures that you know for sure have no pointers.
+The sync message can be sent to one or more endpoints and made avaliable to them, but only one can actually receive the message. This makes it easier to a build a pool of threads that process work where only one of them will recieve the message instead of having to implement logic to decide who does the work you can simply expect that only one will get the message.
 
-I also have included functions for reading and writing varying sized integer types such as `readu32` or `writeu32`. At the moment I support reading and writing signed and unsigned integers of sizes 32, 16, and 8 bits. This gives a safe way to build messages.
+The raw message is the most basic type of message and supports network bridges. A network bridge at this time will ignore sync and clone type messages because there is no easy way to send instances of certain types safely across process boundaries. For network communication you can use a raw message. The raw message consists of a stream of bytes. There are functions provided to support writing type instances into raw messages but they are dangerous and some techniques are used to make this safer. A better alternative to sending types across process boundaries are the usage of an serialization library (either built-in to the standard Rust distribution like JSON) or something like https://crates.io/crates/bincode . By using these you can serialize a structure safely then write it to a raw message and have it unserialized at the other end. I have decide not to include support for this because it is better if you used another library that could specialize in this and do it really well.
 
 Routing 
 ===

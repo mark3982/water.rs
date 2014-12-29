@@ -109,6 +109,8 @@ pub fn thread_tx(mut which: Which<TcpBridgeListener, TcpBridgeConnector>, mut ep
 
         let msg = result.ok();
 
+        println!("tx_thread got message raw:{}", msg.is_raw());
+
         // Check for termination message.
         if msg.is_type::<TerminateMessage>() {
             // This should cause the RX thread to terminate.

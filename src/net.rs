@@ -213,29 +213,25 @@ impl Net {
     /// can not be duplicated. It also needs special routing
     /// to handle sending it only to the local net which should
     /// have only threads running in this same process.
-    pub fn sendsync(&self, msg: Message) -> uint {
+    pub fn sendsync(&self, mut msg: Message) -> uint {
         let mut i = self.i.lock();
+        let mut ocnt = 0u;
 
         if msg.dstsid != 1 && msg.dstsid != i.sid {
             panic!("you can only send sync message to local net!")
         }
 
-        if msg.dsteid == 0 {
-            panic!("you can only send sync message to a single endpoint!");
-        }
-
         // Find who we need to send the message to, and only them.
         for ep in i.endpoints.iter_mut() {
             if msg.dsteid == ep.geteid() {
-                // TODO: try to send to another
-                if ep.givesync(msg) {   
-                    return 1;
+                let msgclone = msg.internal_clone(0x879);
+                if ep.givesync(msgclone) {
+                    ocnt += 1;
                 }
-                return 0;
             }
         }
 
-        0
+        ocnt
     }
 
     fn send_internal(&self, msg: &Message) -> uint {

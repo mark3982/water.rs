@@ -68,26 +68,24 @@ impl Clone for Message {
         match self.payload {
             MessagePayload::Raw(ref msg) => {
                 Message {
-                    canloop: false,
+                    canloop: self.canloop,
                     srcsid: self.srcsid, srceid: self.srceid,
                     dstsid: self.dstsid, dsteid: self.dsteid,
-                    payload: MessagePayload::Raw((*msg).clone())
+                    payload: MessagePayload::Raw((*msg).clone()),
                 }
             },
             MessagePayload::Clone(ref msg) => {
                 Message {
-                    canloop: false,
+                    canloop: self.canloop,
                     srcsid: self.srcsid, srceid: self.srceid,
                     dstsid: self.dstsid, dsteid: self.dsteid,
-                    payload: MessagePayload::Clone((*msg).clone())
+                    payload: MessagePayload::Clone((*msg).clone()),
                 }                
             }
             MessagePayload::Sync(ref msg) => {
                 panic!("Tried to clone a SyncMessage which is unique!");
             }
         }
-
-
     }
 }
 
@@ -99,6 +97,32 @@ impl Message {
             MessagePayload::Raw(ref msg) => msg.cap(),
             MessagePayload::Sync(ref msg) => msg.payload.cap(),
             MessagePayload::Clone(ref msg) => msg.payload.cap(),
+        }
+    }
+
+    /// _(internal|protected)_ Used to clone a sync message. This function is only
+    /// used internally and should not be used by normal code.
+    ///
+    /// I use a `key` to protect you from accidentally using this internal method
+    /// in your normal code. You will have to search the source or call the method
+    /// with an invalid key to get the proper value. This was caused because I was
+    /// unable to make a method only visible to my crate across modules. To keep
+    /// from having to use traits which would complicate the code (I believed at
+    /// this time at least) I used this method.     
+    pub fn internal_clone(&self, key: uint) -> Message {
+        if key != 0x879 {
+            panic!("You used an internal function. They key is 0x879.")
+        }
+        match self.payload {
+            MessagePayload::Sync(ref msg) => {
+                Message {
+                    canloop: self.canloop,
+                    srcsid: self.srcsid, srceid: self.srceid,
+                    dstsid: self.dstsid, dsteid: self.dsteid,
+                    payload: MessagePayload::Sync((*msg).internal_clone(0x879)),
+                }
+            },
+            _ => self.clone(),
         }
     }
 

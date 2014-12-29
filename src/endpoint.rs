@@ -139,18 +139,30 @@ impl Internal {
     /// Takes one message from the queue and returns it. It also attempts to duplicate
     /// the message if that is supported to prevent giving access to shared buffers.
     fn recv(&mut self) -> IoResult<Message> {
-        if self.messages.len() < 1 {
-            return IoResult::Err(IoError { code: IoErrorCode::NoMessages });
-        }
+        // The loop is needed for the sync type messages. We may have to discard
+        // a message and try to read another one. This performs that function.
+        loop {
+            if self.messages.len() < 1 {
+                return IoResult::Err(IoError { code: IoErrorCode::NoMessages });
+            }
 
-        let msg = self.messages.remove(0).unwrap().dup_ifok();
+            // Takes the message out of the queue and duplicates it if possible.
+            let msg = self.messages.remove(0).unwrap().dup_ifok();
 
-        self.memoryused -= msg.cap();
+            self.memoryused -= msg.cap();
 
-        match msg.payload {
-            MessagePayload::Raw(_) => IoResult::Ok(msg.dup()),
-            MessagePayload::Sync(_) => IoResult::Ok(msg),
-            MessagePayload::Clone(_) => IoResult::Ok(msg),
+            match msg.payload {
+                MessagePayload::Raw(_) => { return IoResult::Ok(msg.dup()); },
+                MessagePayload::Sync(_) => {
+                    // To support first recv for sync message we need to try
+                    // to take the message first. If we can not take the message
+                    // we ignore it and throw it away.
+                    if msg.get_syncref().takeasvalid() {
+                        return IoResult::Ok(msg);
+                    }
+                },
+                MessagePayload::Clone(_) => { return IoResult::Ok(msg); },
+            }
         }
     }
 }

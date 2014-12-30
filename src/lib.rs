@@ -28,6 +28,7 @@
 
 extern crate time;
 
+pub use time::Timespec;
 pub use net::Net;
 pub use endpoint::Endpoint;
 pub use rawmessage::RawMessage;

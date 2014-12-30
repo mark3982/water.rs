@@ -104,6 +104,8 @@ struct Internal {
     net:            Net,
 }
 
+unsafe impl Send for Internal { }
+
 /// A endpoint represents a node on a net that can transmit and recieve messages.
 ///
 /// The endpoint can transmit and recieve messages. It can be cloned so that multiple owners
@@ -116,6 +118,7 @@ pub struct Endpoint {
     i:          Arc<Mutex<Internal>>,
 }
 
+unsafe impl Send for Endpoint { }
 
 impl Clone for Endpoint {
     /// This will clone the endpoint allowing a second owner to have access. This does not
@@ -181,13 +184,13 @@ impl Endpoint {
     /// network.
     pub fn new(sid: u64, eid: u64, net: Net) -> Endpoint {
         Endpoint {
-            i:      Arc::new(Mutex::new(Internal {
+            i:  Arc::new(Mutex::new(Internal {
                 messages:       RingBuf::with_capacity(128),
                 cwaker:         Condvar::new(),
                 wakeupat:       Timespec { nsec: 0i32, sec: 0x7fffffffffffffffi64 },
                 wakeinprogress: false,
-                limitpending:   1024,
-                limitmemory:    1024 * 1024 * 512,
+                limitpending:   0,
+                limitmemory:    0,
                 memoryused:     0,
                 sid:            sid,
                 eid:            eid,
@@ -247,6 +250,15 @@ impl Endpoint {
 
         // If it is to a secific endpoint and we are not it.
         if msg.dsteid != 0 && msg.dsteid != i.eid {
+            return false;
+        }
+
+        // Check limits for pending count and memory.
+        if i.limitpending > 0 && i.messages.len() >= i.limitpending {
+            return false;
+        }
+
+        if i.limitmemory > 0 && i.memoryused >= i.limitmemory {
             return false;
         }
 
@@ -331,6 +343,10 @@ impl Endpoint {
         self.i.lock().eid = id;
     }
 
+
+    /// Send a message, but leave from address fields alone.
+    ///
+    /// _If sync type use `syncsync` or `sendsyncx`._
     pub fn sendx(&self, msg: &Message) -> uint {
         let i = self.i.lock();
         let net = i.net.clone();
@@ -338,7 +354,9 @@ impl Endpoint {
         net.send(msg)
     }
 
-    /// Send a message of raw type.
+    /// Send a message, but mutates message from address fields with correct return address.
+    ///
+    /// _If sync type use `sendsync` or `sendsyncx`._
     pub fn send(&self, msg: &mut Message) -> uint {
         let i = self.i.lock();
         let net = i.net.clone();
@@ -349,7 +367,7 @@ impl Endpoint {
     }
 
     /// Easily sends a sync message by wrapping it into a
-    /// message. Using this function is the equivilent of:
+    /// message. Using this function is the same as doing:
     /// 
     /// `endpoint.sendsync(Message::new_sync(t))`
     ///
@@ -363,7 +381,7 @@ impl Endpoint {
     }
 
     /// Easily sends a clone message by wrapping it into a
-    /// message. Using this function is the equivilent of:
+    /// message. Using this function is the same as doing:
     /// 
     /// `endpoint.send(&Message::new_sync(t))`
     ///
@@ -401,12 +419,22 @@ impl Endpoint {
     }
 
 
-    /// Recieve a message or block until the specifie duration expires then return an error condition.
-    /// ```
-    ///     let result = endpoint.recvorblock( Timespec { sec: 5i64, nsec: 0i32 } );
-    ///     if result.is_err() { do_something(); }
-    ///     let message = result.ok();
-    /// ```
+    /// Recieve a message or block until the specified duration expires then return an error condition.
+    /// 
+    ///     use water::Net;
+    ///     use water::Timespec;
+    ///
+    ///     let mut net = Net::new(123);
+    ///     let mut ep1 = net.new_endpoint();
+    ///     let mut ep2 = net.new_endpoint();
+    ///     ep2.sendclonetype(3u);             
+    ///     let result = ep1.recvorblock( Timespec { sec: 5i64, nsec: 0i32 } );
+    ///     if result.is_err() { 
+    ///         println!("no message");
+    ///     } else {
+    ///         println!("got message [{}]", result.ok().typeunwrap::<uint>());
+    ///     }
+    /// 
     /// See `Message` for API dealing with messages.
     pub fn recvorblock(&self, duration: Timespec) -> IoResult<Message> {
         let mut when: Timespec = get_time();

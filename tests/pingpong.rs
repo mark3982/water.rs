@@ -14,13 +14,13 @@ fn pingpong() {
 
 /*
     rust channels
-        real 19.823
-        user 4.856
-        sys 34.598
+        real    19.823
+        user    4.856
+        sys     34.598
     water
-        real 9.397
-        user 0.220
-        sys 7.492
+        real    9.397
+        user    0.220
+        sys     7.492
 */
 
 fn main() {
@@ -37,7 +37,7 @@ fn pingpong_bench(m: uint, n: uint) {
 
         let ta = Thread::spawn(move || {
             for _ in range(0, n) {
-                epa.sendsynctype(Foo);
+                epa.sendsynctype(());
                 epa.recvorblock( Timespec { sec: 9i64, nsec: 0i32 } ).ok();
             }
         });
@@ -45,7 +45,7 @@ fn pingpong_bench(m: uint, n: uint) {
         let tb = Thread::spawn(move || {
             for _ in range(0, n) {
                 epb.recvorblock( Timespec { sec: 9i64, nsec: 0i32 } ).ok();
-                epb.sendsynctype(Foo);
+                epb.sendsynctype(());
             }
         });
 

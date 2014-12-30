@@ -1,3 +1,5 @@
+#![allow(unused_mut)]
+
 pub use tcp::listener::TcpBridgeListener;
 pub use tcp::connector::TcpBridgeConnector;
 

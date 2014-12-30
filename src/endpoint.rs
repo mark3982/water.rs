@@ -16,6 +16,7 @@ use std::mem::transmute_copy;
 use std::mem::uninitialized;
 use std::intrinsics::copy_memory;
 use std::intrinsics::transmute;
+use std::collections::RingBuf;
 
 use time::Timespec;
 use time::get_time;
@@ -90,7 +91,7 @@ impl<T> IoResult<T> {
 
 struct Internal {
     cwaker:         Condvar,
-    messages:       Vec<Message>,
+    messages:       RingBuf<Message>,
     wakeupat:       Timespec,
     wakeinprogress: bool,
     limitpending:   uint,
@@ -147,7 +148,8 @@ impl Internal {
             }
 
             // Takes the message out of the queue and duplicates it if possible.
-            let msg = self.messages.remove(0).unwrap().dup_ifok();
+            //let msg = self.messages.remove(0).unwrap().dup_ifok();
+            let msg = self.messages.pop_front().unwrap().dup_ifok();
 
             self.memoryused -= msg.cap();
 
@@ -180,9 +182,9 @@ impl Endpoint {
     pub fn new(sid: u64, eid: u64, net: Net) -> Endpoint {
         Endpoint {
             i:      Arc::new(Mutex::new(Internal {
-                messages:       Vec::new(),
+                messages:       RingBuf::with_capacity(128),
                 cwaker:         Condvar::new(),
-                wakeupat:       Timespec { nsec: 0i32, sec: 0x7fffffffffffffffi64},
+                wakeupat:       Timespec { nsec: 0i32, sec: 0x7fffffffffffffffi64 },
                 wakeinprogress: false,
                 limitpending:   1024,
                 limitmemory:    1024 * 1024 * 512,
@@ -251,10 +253,12 @@ impl Endpoint {
         //println!("ep[{:p}] took message {:p}", &*i, msg);
         if msg.is_sync() {
             // The sync has to use a protected clone method.
-            i.messages.push((*msg).internal_clone(0x879));
+            //i.messages.push((*msg).internal_clone(0x879));
+            i.messages.push_back((*msg).internal_clone(0x879));
         } else {
             // Everything else can be cloned like normal.
-            i.messages.push((*msg).clone());
+            //i.messages.push((*msg).clone());
+            i.messages.push_back((*msg).clone());
         }
 
         i.memoryused += msg.cap();

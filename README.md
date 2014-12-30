@@ -72,6 +72,10 @@ _I recommend using Cargo as it makes managing and building dependancies very eas
 
 For more examples check out the `tests` directory in the source tree! Each test will demonstrate different parts of the library and how to use it. I aim to have everything working and compiling on the master branch. If you want bleeding edge you can select the `dev` branch or any other to find less tester but possibly newer features.
 
+Difference Of Channels
+===
+
+A Rust channel produces two devices. One transmits messages and the other recieves messages. To produce a bi-directional channel you need to do some work. Water provides bi-directional communication with two endpoints. Also, water allows one endpoint to transmit to one or more endpoints. You can however use Water to produce Rust channel like behavior by creating a single net for each two endpoints, and only using one or the other for transmitting and one for receiving.
 
 Network Bridge Types Supported
 ===

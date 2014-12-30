@@ -80,6 +80,14 @@ A bridge joins two nets to provide remote process (machine) or intra-process com
 
 Currently, the library only provides support for the TCP bridge, but I plan to add others such as UDP which will sport the same cons and pros of it.
 
+Performance 
+===
+
+I recently did a pingpong test comparing the channels that Rust uses and water. The results were encouraging. It showed that my implementation was about 2x faster. The exact reasons I am unsure of. The test code is located in
+`/tests/pingpong.rs`. A implement using Rust channels can be found here, https://raw.githubusercontent.com/rust-lang/rust/master/src/test/bench/rt-messaging-ping-pong.rs
+
+_If you have any benchmarks or information please share it with me at kmcg3413@gmail.com_
+
 Asynchronous Versus Synchronous Calls
 ===
 

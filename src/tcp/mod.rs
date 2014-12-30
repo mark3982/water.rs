@@ -93,7 +93,7 @@ pub fn thread_rx(mut which: Which<TcpBridgeListener, TcpBridgeConnector>, mut ep
 
         // We need to place the message onto the net so that that it can
         // be routed to its one or more destinations.
-        ep.sendraw(&msg);
+        ep.sendx(&msg);
     }
 }
 

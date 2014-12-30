@@ -54,7 +54,7 @@ fn tcpio_do() {
         slice[2] = 0x56;
         slice[3] = 0x78;
     }
-    ep1.sendraw(&msg);
+    ep1.send(&mut msg);
 
     // The message that we sent should arrive or will have already
     // arrived by the time we make this call. It will block for

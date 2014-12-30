@@ -40,7 +40,6 @@ pub const UNUSED_ID: ID = !0u64;
 struct Internal {
     endpoints:      Vec<Endpoint>,
     hueid:          ID,              // highest unused endpoint id
-    sid:            ID,
 }
 
 /// Forms a group of endpoints that can all communicate locally. All
@@ -56,12 +55,14 @@ struct Internal {
 /// crate._
 pub struct Net {
     i:      Arc<Mutex<Internal>>,
+    sid:    ID,
 }
 
 impl Clone for Net {
     fn clone(&self) -> Net {
         Net {
             i:      self.i.clone(),
+            sid:    self.sid,
         }
     }
 }
@@ -129,8 +130,8 @@ impl Net {
             i:  Arc::new(Mutex::new(Internal {
                 endpoints:      Vec::new(),
                 hueid:          0x10000,
-                sid:            sid,
             })),
+            sid:    sid,
         };
 
         // Spawn a helper thread which provides the ability
@@ -155,146 +156,52 @@ impl Net {
         tcp::connector::TcpBridgeConnector::new(self, addr)
     } 
 
-    pub fn sendas(&self, rawmsg: &Message, frmsid: ID, frmeid: ID) -> uint {
-        let mut duped = rawmsg.dup();
-        duped.srcsid = frmsid;
-        duped.srceid = frmeid;
-        self.send_internal(&duped)
-    }
-
-    pub fn send(&self, msg: &Message) -> uint {
-        match msg.payload {
-            MessagePayload::Sync(ref payload) => {
-                panic!("use `sendsync` instead of `send` for sync messages");
-            }
-            _ => {
-            }
-        }
-
-        let duped = msg.dup();
-        self.send_internal(&duped)
-    }
-
-    pub fn sendcloneas(&self, msg: &mut Message, fromsid: ID, fromeid: ID) -> uint {
-        if !msg.is_clone() {
-            panic!("`sendclone` can only be used with clone messages!")
-        }
+    /// Send message with specified from addresses.
+    pub fn sendas(&self, msg: &mut Message, fromsid: ID, fromeid: ID) -> uint {
         msg.srcsid = fromsid;
         msg.srceid = fromeid;
-        self.sendclone(msg)
+        self.send(msg)
     }
 
-    pub fn sendclone(&self, msg: &Message) -> uint {
-        let mut i = self.i.lock();
-        let mut ocnt = 0u;
-
-        if msg.dstsid != 1 && msg.dstsid != i.sid {
-            panic!("you can only send clone message to local net!")
+    /// Send message.
+    pub fn send(&self, msg: &Message) -> uint {
+        if msg.is_sync() {
+            panic!("You must send a sync message with `sendsync` or `sendsyncas`!");
         }
 
-        for ep in i.endpoints.iter_mut() {
-            if msg.dsteid == ep.geteid() {
-                if ep.give(msg) {
-                    ocnt += 1;
-                }
-            }
+        if msg.is_raw() {
+            // Duplicate it to not share the buffer with the sender.
+            self.send_internal(&(msg.dup()))
+        } else {
+            self.send_internal(msg)
         }
-
-        ocnt
     }
 
+    /// Consume the sync message and send with the specified from addresses.
     pub fn sendsyncas(&self, mut msg: Message, frmsid: ID, frmeid: ID) -> uint {
         msg.srcsid = frmsid;
         msg.srceid = frmeid;
         self.sendsync(msg)
     }
 
-    /// A sync type message needs to be consumed because it
-    /// can not be duplicated. It also needs special routing
-    /// to handle sending it only to the local net which should
-    /// have only threads running in this same process.
-    pub fn sendsync(&self, mut msg: Message) -> uint {
-        let mut i = self.i.lock();
+    /// Consume the sync message and send.
+    pub fn sendsync(&self, msg: Message) -> uint {
+        self.send_internal(&msg)
+    }
+
+    // Try to give the message to all endpoints. The endpoints do the logic
+    // to determine if they will recieve the message.
+    fn send_internal(&self, msg: &Message) -> uint {
         let mut ocnt = 0u;
 
-        if msg.dstsid != 1 && msg.dstsid != i.sid {
-            panic!("you can only send sync message to local net!")
-        }
-
-        // Find who we need to send the message to, and only them.
+        let mut i = self.i.lock();
         for ep in i.endpoints.iter_mut() {
-            if msg.dsteid == ep.geteid() {
-                let msgclone = msg.internal_clone(0x879);
-                if ep.givesync(msgclone) {
-                    ocnt += 1;
-                }
+            if ep.give(msg) {
+                ocnt += 1;
             }
         }
 
         ocnt
-    }
-
-    fn send_internal(&self, msg: &Message) -> uint {
-        let mut ocnt = 0u;
-
-        match msg.dstsid {
-            0 => {
-                // broadcast to everyone
-                let mut i = self.i.lock();
-                for ep in i.endpoints.iter_mut() {
-                    // Do not send to the endpoint that it originated from.
-                    if !msg.canloop && msg.srceid == ep.geteid() && msg.srcsid == ep.getsid() {
-                        continue;
-                    }
-                    if msg.dsteid == 0 || msg.dsteid == ep.geteid() {
-                        if ep.give(msg) {
-                            ocnt += 1;
-                        }
-                    }
-                }
-
-                ocnt
-            },
-            1 => {
-                // ourself only
-                let mut i = self.i.lock();
-                let sid = i.sid;
-                for ep in i.endpoints.iter_mut() {
-                    // Do not send to the endpoint that it originated from.
-                    if !msg.canloop && msg.srceid == ep.geteid() && msg.srcsid == ep.getsid() {
-                        continue;
-                    }        
-                    if ep.getsid() == sid {
-                        if msg.dsteid == 0 || msg.dsteid == ep.geteid() {
-                            if ep.give(msg) {
-                                ocnt += 1;
-                            }
-                        }
-                    }
-                }
-
-                ocnt
-            },
-            dstsid => {
-                // specific server
-                let mut i = self.i.lock();                    
-                for ep in i.endpoints.iter_mut() {
-                    // Do not send to the endpoint that it originated from.
-                    if !msg.canloop && msg.srceid == ep.geteid() && msg.srcsid == ep.getsid() {
-                        continue;
-                    }                    
-                    if ep.getsid() == dstsid {
-                        if msg.dsteid == 0 || msg.dsteid == ep.geteid() {
-                            if ep.give(msg) {
-                                ocnt += 1;
-                            }
-                        }
-                    }
-                }
-
-                ocnt
-            }
-        }
     }
 
     pub fn get_neweid(&mut self) -> ID {
@@ -311,7 +218,7 @@ impl Net {
             i.hueid = eid + 1;
         }
 
-        let ep = Endpoint::new(i.sid, eid, self.clone());
+        let ep = Endpoint::new(self.sid, eid, self.clone());
 
         i.endpoints.push(ep.clone());
 
@@ -325,7 +232,7 @@ impl Net {
     pub fn new_endpoint(&mut self) -> Endpoint {
         let mut i = self.i.lock();
 
-        let ep = Endpoint::new(i.sid, i.hueid, self.clone());
+        let ep = Endpoint::new(self.sid, i.hueid, self.clone());
         i.hueid += 1;
 
         let epclone = ep.clone();
@@ -336,6 +243,6 @@ impl Net {
     }
     
     pub fn getserveraddr(&self) -> ID {
-        self.i.lock().sid
+        self.sid
     }
 }

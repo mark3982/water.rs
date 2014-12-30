@@ -211,7 +211,6 @@ impl Endpoint {
         drop(i);
 
         self.wakeonewaiter();
-
         true
     }
 
@@ -220,19 +219,48 @@ impl Endpoint {
         let mut i = self.i.lock();
 
         //println!("ep[{:p}] thinking about taking message {:p}", &*i, msg);
-        if (i.eid == msg.dsteid || msg.dsteid == 0) || (i.gid == msg.dsteid) {
-            if i.sid == msg.dstsid || msg.dstsid == 0 {
-                //println!("ep[{:p}] took message {:p}", &*i, msg);
-                i.messages.push((*msg).clone());
-                i.memoryused += msg.cap();
-                drop(i);
-                if self.wakeonewaiter() {
+        //println!("msg.srcsid:{} msg.srceid:{} msg.dstsid:{} msg.dsteid:{}", msg.srcsid, msg.srceid, msg.dstsid, msg.dsteid);
+        //println!("my.sid:{} my.eid:{} net.sid:{}", i.sid, i.eid, i.net.getserveraddr());
+
+        // Do not send to the endpoint that it originated from.
+        if !msg.canloop && msg.srceid == i.eid && msg.srcsid == i.sid {
+            return false;
+        }
+
+        if msg.dstsid != 0 {
+            if msg.dstsid != 1 {
+                // It must be to a specific net and we are not it.
+                if msg.dstsid != i.sid {
+                    return false;
                 }
-                return true;
+            } else {
+                // If its too the local net, but we are not part of
+                // the local net. We are likely a type of bridge then
+                // let us ignore it.
+                if i.sid !=  i.net.getserveraddr() {
+                    return false;
+                }
             }
         }
 
-        false
+        // If it is to a secific endpoint and we are not it.
+        if msg.dsteid != 0 && msg.dsteid != i.eid {
+            return false;
+        }
+
+        //println!("ep[{:p}] took message {:p}", &*i, msg);
+        if msg.is_sync() {
+            // The sync has to use a protected clone method.
+            i.messages.push((*msg).internal_clone(0x879));
+        } else {
+            // Everything else can be cloned like normal.
+            i.messages.push((*msg).clone());
+        }
+
+        i.memoryused += msg.cap();
+        drop(i);
+        self.wakeonewaiter();
+        true
     }
 
     /// Return true if the endpoint has messages that recv will not fail on getting. Beware
@@ -299,8 +327,15 @@ impl Endpoint {
         self.i.lock().eid = id;
     }
 
+    pub fn sendx(&self, msg: &Message) -> uint {
+        let i = self.i.lock();
+        let net = i.net.clone();
+        drop(i);
+        net.send(msg)
+    }
+
     /// Send a message of raw type.
-    pub fn sendraw(&self, msg: &Message) -> uint {
+    pub fn send(&self, msg: &mut Message) -> uint {
         let i = self.i.lock();
         let net = i.net.clone();
         let sid = i.sid;
@@ -316,20 +351,27 @@ impl Endpoint {
     ///
     /// This is a helper function to make sending easier
     /// and code cleaner looking.
-    pub fn sendsyncbytype<T: Send>(&self, t: T) -> uint {
-        self.sendsync(Message::new_sync(t))
+    pub fn sendsynctype<T: Send>(&self, t: T) -> uint {
+        let mut msg = Message::new_sync(t);
+        msg.dstsid = 1; // only local net
+        msg.dsteid = 0; // everyone
+        self.sendsync(msg)
     }
 
     /// Easily sends a clone message by wrapping it into a
     /// message. Using this function is the equivilent of:
     /// 
-    /// `endpoint.sendsync(&Message::new_sync(t))`
+    /// `endpoint.send(&Message::new_sync(t))`
     ///
     /// This is a helper function to make sending easier
     /// and code cleaner looking.
-    pub fn sendclonebytype<T: Send + Clone>(&self, t: T) -> uint {
-        self.sendclone(&mut Message::new_clone(t))
+    pub fn sendclonetype<T: Send + Clone>(&self, t: T) -> uint {
+        let mut msg = Message::new_clone(t);
+        msg.dstsid = 1; // only local net
+        msg.dsteid = 0; // everyone
+        self.send(&mut msg)
     }
+
 
     /// Send a sync message. This requires a special call since a 
     /// sync message is unique and can not be cloned therefore we
@@ -346,19 +388,14 @@ impl Endpoint {
         net.sendsyncas(msg, sid, eid)
     }
 
-    /// Send a clone message. This takes a reference since it will
-    /// call clone on the message internally to produce a copy of
-    /// it.
-    ///
-    /// See `sendclonebytype` for easier calling.
-    pub fn sendclone(&self, msg: &mut Message) -> uint {
+    /// Send a sync message but do not set from fields.
+    pub fn sendsyncx(&self, msg: Message) -> uint {
         let i = self.i.lock();
         let net = i.net.clone();
-        let sid = i.sid;
-        let eid = i.eid;
         drop(i);
-        net.sendcloneas(msg, sid, eid)
+        net.sendsync(msg)
     }
+
 
     /// Recieve a message or block until the specifie duration expires then return an error condition.
     /// ```

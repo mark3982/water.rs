@@ -40,6 +40,7 @@ impl Internal {
             cap = 1;
         }
 
+        // TODO: do we need to zero out the memory allocates?
         Internal {
             len:        cap,
             cap:        cap,

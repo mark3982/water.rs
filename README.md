@@ -162,6 +162,11 @@ Documentation
 You can find some documentation hosted at, http://kmcg3413.net/water.rs/doc/ . This should be kept up to date
 with the master branch and the https://crates.io/water repository. You should also be able to generate documentation locally by cloning this repository and then doing `rustdoc ./src/lib.rs` which will create a doc sub-directory containing the HTML documentation.
 
+Compatibility Layer
+===
+
+I have included a compatibility layer which emulates the native Rust threads. It is still missing the ability to select on multiple channels as that is pending my implementation of waiting on multiple endpoints which I am working on. I only provide stream mode at the moment but you can easily get shared mode with a little hacking (plan to officially support it soon). The underlying infrastructure of the proxy object standing the place of `std::comm::Receiver<T>` and `std::comm::Sender<T>` are very simple and can be found under `/src/compat.rs` if you need to work on them or become curious about how it works.
+
 Sync/Clone/Raw Messages
 ===
 

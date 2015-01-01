@@ -102,6 +102,7 @@ struct Internal {
     sid:            u64,
     gid:            u64,
     net:            Net,
+    refcnt:         uint,
 }
 
 unsafe impl Send for Internal { }
@@ -157,8 +158,35 @@ impl Clone for Endpoint {
     /// duplicate the endpoint, but rather gives you a second handle to access it. This is
     /// a common operation.
     fn clone(&self) -> Endpoint {
+        self.i.lock().refcnt += 1;
         Endpoint {
             i:          self.i.clone(),
+        }
+    }
+}
+
+/// Implements the very special drop code needed when the only instance of the
+/// endpoint left is owned by the `Net` instance it was associated with. This
+/// does not contain any unsafe code, but performs an important function of removing
+/// the last remaining instance of the smart pointer from `Net` allowing it to
+/// be truly dropped and deallocated with out manual intervention.
+impl Drop for Endpoint {
+    fn drop(&mut self) {
+        let mut lock = self.i.lock();
+        lock.refcnt -= 1;
+        // Only call when one is left which we should be able to safely assume
+        // is owned by the `Net` instance. This will let the net drop it's instance
+        // which will call this function again, but that time `refcnt` will be zero
+        // so we will just skip this code block and drop like normal.
+        if lock.refcnt == 1 {
+            // Notify that the `Net` now contains the only
+            // instance of ourselves. We need to drop the
+            // lock because we will get called again, but
+            // we need to have a way to call the net
+            // method after we drop the lock.
+            let mut net = lock.net.clone();
+            drop(lock);
+            net.drop_endpoint(self);
         }
     }
 }
@@ -228,6 +256,7 @@ impl Endpoint {
                 eid:            eid,
                 net:            net,
                 gid:            UNUSED_ID,
+                refcnt:         1,
             })),
         }
     }
@@ -240,16 +269,20 @@ impl Endpoint {
         i.wakeupat
     }
 
-    /// (internal usage) Give the endpoint a sync message.
-    pub fn givesync(&mut self, msg: Message) -> bool {
-        let mut i = self.i.lock();
-        i.memoryused += msg.cap();
-        i.messages.push(msg);
-        drop(i);
-
-        self.wakeonewaiter();
-        true
+    pub fn getpeercount(&self) -> uint {
+        self.i.lock().net.getepcount()
     }
+
+    /// (internal usage) Give the endpoint a sync message.
+    //pub fn givesync(&mut self, msg: Message) -> bool {
+    //    let mut i = self.i.lock();
+    //    i.memoryused += msg.cap();
+    //    i.messages.push(msg);
+    //    drop(i);
+    //
+    //    self.wakeonewaiter();
+    //    true
+    //}
 
     /// (internal usage) Give the endpoint a raw message.
     pub fn give(&mut self, msg: &Message) -> bool {

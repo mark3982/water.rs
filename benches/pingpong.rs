@@ -15,7 +15,7 @@ use water::Net;
 use std::thread::Thread;
 use std::time::duration::Duration;
 
-const BIGSIZE: uint = 128;
+const BIGSIZE: uint = 1024;
 
 pub struct BencherHack {
     iterations: u64,

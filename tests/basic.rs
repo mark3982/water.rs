@@ -1,5 +1,4 @@
 #![allow(deprecated)]
-
 extern crate time;
 extern crate water;
 
@@ -12,6 +11,8 @@ use water::Message;
 use std::thread::JoinGuard;
 use std::thread::Thread;
 use time::Timespec;
+//use std::io::timer::sleep;
+//use std::time::duration::Duration;
 
 // A safe structure is one that has no pointers and uses only primitive
 // types or types that are known to have primitive fields such as static
@@ -43,9 +44,9 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     // Wait until the other endpoints are ready.
     while net.getepcount() < THREADCNT + 1 { }
 
-    //sleep(Duration::seconds(3));
+    //sleep(Duration::seconds(1));
 
-    let limit = 100u;
+    let limit = 1u;
 
     let mut sentmsgcnt: uint = 0u;
     let mut recvmsgcnt: uint = 0u;
@@ -60,7 +61,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     msgtosend.dstsid = 0;
     msgtosend.dsteid = 0;
 
-    while recvmsgcnt < limit * (THREADCNT - 1) && sentmsgcnt < limit {
+    while recvmsgcnt < limit * (THREADCNT - 1) || sentmsgcnt < limit {
         // Read anything we can.
         loop { 
             //println!("thread[{}] recving", dbgid);
@@ -77,7 +78,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
             if safestruct.b != 0x10 {
                 recvmsgcnt += 1;
                 //if dbgid == 2 {
-                //println!("@@thread[{}] got {}/{} messages", dbgid, recvmsgcnt, limit);
+                //println!("@@thread[{}] got {}/{} messages", dbgid, recvmsgcnt, limit * (THREADCNT - 1));
                 //}
                 assert!(safestruct.b == 0x12345678u32);
                 assert!(safestruct.c == 0x12u8);
@@ -97,8 +98,8 @@ fn funnyworker(mut net: Net, dbgid: uint) {
             msgtosend.get_rawmutref().writestructref(0, &safestruct); 
             let rby = ep.send(&mut msgtosend);
             if rby < THREADCNT {
-                panic!("send to only {} threads", rby);
-            }           
+                panic!("send {} less than {}", rby, THREADCNT);
+            }
             sentmsgcnt += 1;
         }
     }
@@ -116,6 +117,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     ep.send(&mut msgtosend);
 
     //println!("thread[{}]: exiting (sent buffer {})", dbgid, msgtosend.get_rawref().id());
+    //loop { }
 }
 
 #[test]
@@ -145,10 +147,11 @@ fn basicio() {
     // Try to repeat the test a number of times to hopefully
     // catching anything that might be missed if you only run
     // it once.
-    for _ in range(0u, 20u) {
+    for _ in range(0u, 100u) {
         //println!("making test");
-        let t = Thread::spawn(move || { _basicio(); });
-        t.join();
+        //let t = Thread::spawn(move || { _basicio(); });
+        //t.join();
+        _basicio();
     }
 }
 
@@ -211,4 +214,5 @@ fn _basicio() {
             }
         }
     }
+    //println!("done");
 }

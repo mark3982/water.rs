@@ -229,6 +229,21 @@ impl Net {
         self.i.lock().endpoints.push(ep);
     }
 
+    pub fn drop_endpoint(&mut self, thisep: &Endpoint) {
+        let mut lock = self.i.lock();
+        let endpoints = &mut lock.endpoints;
+
+        for i in range(0u, endpoints.len()) {
+            if endpoints[i].id() == thisep.id() {
+                // The drop method of Endpoint likely called this method
+                // so hopefully it is capable of handling a nested call
+                // back into it's self.
+                endpoints.remove(i);
+                return;
+            }
+        }
+    }
+
     pub fn new_endpoint(&mut self) -> Endpoint {
         let mut i = self.i.lock();
 

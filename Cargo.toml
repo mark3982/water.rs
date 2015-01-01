@@ -1,7 +1,7 @@
 [package]
 
 name = "water"
-version = "0.11.27-alpha"
+version = "0.12.30-alpha"
 authors = ["kmcguire <kmcg3413@gmail.com>"]
 description = "Provides thread-safe distributed message sending facility supporting synchronous and asynchronous I/O across process and machine boundaries. It also uses nets which allow message broadcasts to all, groups, or specific endpoints which eliminates the need for tons of individual channels to interconnect threads. It also provides inter-process communication using a more restricted raw message type. It is hoped that this library can replace the current channel functionality."
 homepage = "https://github.com/kmcguire3413/water.rs"

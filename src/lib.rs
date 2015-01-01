@@ -28,7 +28,10 @@
 //!
 //! Also be sure to check out the README which is visible at https://github.com/kmcguire3413/water.rs - 
 //! it will detail more information about the library.
-
+//!
+//! If you are trying to get started you will want to use `Net` and `Endpoint` with maybe `Message`. These
+//! three objects form the core of the library and are used extensively. Although, you will mainly only use
+//! the `Net` object for creating endpoints it still has some functionality like bridges and such.
 extern crate test;
 extern crate time;
 
@@ -46,14 +49,26 @@ pub use clonemessage::CloneMessage;
 pub use tcp::TcpBridgeConnector;
 pub use tcp::TcpBridgeListener;
 
+/// Gets the current system time.
 pub use time::get_time;
+/// Specifies a fairly accurate time.
 pub use time::Timespec;
+/// Provides some utility functions for a `Timespec`.
 pub mod timespec;
 
+/// A sync message is a unique type instance. A sub-type of Message.
 pub mod syncmessage;
+/// The sender/receiver combination.
 pub mod endpoint;
+/// The network.
 pub mod net;
+/// A raw message is a byte array. A sub-type of Message.
 pub mod rawmessage;
+/// TCP network bridge.
 pub mod tcp;
+// A message can be sent or received.
 pub mod message;
+/// A clone message is a non-unique type instance. A sub-type of Message.
 pub mod clonemessage;
+/// Provides functionality of a native Rust channel.
+pub mod compat;

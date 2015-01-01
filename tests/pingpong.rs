@@ -8,26 +8,45 @@ use std::thread::Thread;
 struct Foo;
 
 #[test]
-fn pingpong() {
-    pingpong_bench(4, 10000);
+fn pingpong_test() {
+    pingpong_water(1, 10);
 }
-
-/*
-    rust channels
-        real    19.823
-        user    4.856
-        sys     34.598
-    water
-        real    9.397
-        user    0.220
-        sys     7.492
-*/
 
 fn main() {
-    pingpong_bench(4, 10000);
+    pingpong_water(4, 10000);
 }
 
-fn pingpong_bench(m: uint, n: uint) {
+fn pingpong_native(m: uint, n: uint) {
+    // Create pairs of tasks that pingpong back and forth.
+    fn run_pair(n: uint) {
+        // Create a stream A->B
+        let (atx, arx) = channel::<()>();
+        // Create a stream B->A
+        let (btx, brx) = channel::<()>();
+
+        spawn(move|| {
+            let (tx, rx) = (atx, brx);
+            for _ in range(0, n) {
+                tx.send(());
+                rx.recv();
+            }
+        });
+
+        spawn(move|| {
+            let (tx, rx) = (btx, arx);
+            for _ in range(0, n) {
+                rx.recv();
+                tx.send(());
+            }
+        });
+    }
+
+    for _ in range(0, m) {
+        run_pair(n)
+    }
+}
+
+fn pingpong_water(m: uint, n: uint) {
 
     fn run_pair(n: uint) {
         let mut net = Net::new(100);

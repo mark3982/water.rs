@@ -112,8 +112,40 @@ unsafe impl Send for Internal { }
 /// can share an instance of it, and it is thread safe to multiple threads at the same time.
 /// You can set the system identifier, endpoint identifier, and group identifier during run-time
 /// at any time you wish making the endpoint versitile and flexible. The endpoint provides
-/// synchronous and asynchronous I/O for `send` and `recv` method. It also has the ability to set
-/// limits to prevent memory exhaustion by it's internal buffers.
+/// synchronous and asynchronous I/O for receiving and asynchrnous I/O for sending. It also has
+/// the ability to set limits to prevent memory exhaustion by it's internal buffers.
+///
+/// An endpoint is identifier currently with three
+///
+/// An endpoint can be created with an automatically assigned unique ID, or you can specify
+/// the endpoint ID. Endpoints may also share the same ID which makes directly addressing
+/// one of them impossible except using a sync message. 
+///
+/// An example of using an endpoint like a channel:
+///
+///     use water::Net;
+///     use water::Timespec;
+///
+///     // Create a Rust channel.     
+///     let (tx, rx) = channel::<uint>();
+///
+///     // Create the equivilent of a Rust channel (but bi-directional).
+///     let mut net = Net::new(200);
+///     let mut ep1 = net.new_endpoint();
+///     let mut ep2 = net.new_endpoint();
+//
+///     // Here we send and recv using water.
+///     ep1.sendclonetype(3u);
+///     ep2.recvorblock( Timespec { sec: 9999i64, nsec: 0i32 } );
+///
+///     // Here we send and recv using Rust channels.
+///     tx.send(3u);
+///     rx.recv();
+///
+/// As you can see it would be fairly easy to create a helper function to make creation of
+/// a water bi-direction channel as easy as the Rust channel. However, the water channel is
+/// much more powerful in that it is bi-directional and can handle joining many endpoints into
+/// a single net where they can all communicate together.
 pub struct Endpoint {
     i:          Arc<Mutex<Internal>>,
 }
@@ -228,6 +260,7 @@ impl Endpoint {
         //println!("my.sid:{} my.eid:{} net.sid:{}", i.sid, i.eid, i.net.getserveraddr());
 
         // Do not send to the endpoint that it originated from.
+
         if !msg.canloop && msg.srceid == i.eid && msg.srcsid == i.sid {
             return false;
         }
@@ -418,6 +451,20 @@ impl Endpoint {
         net.sendsync(msg)
     }
 
+    // This function is more on par for performance with the Rust channel
+    // `Receiver<T>`. It is very fast because it does not include timeout
+    // logic.
+    pub fn recvorblockforever(&self) -> IoResult<Message> {
+        let mut i = self.i.lock();
+
+        i.wakeinprogress = false;
+        while i.messages.len() < 1 {
+            i.cwaker.wait(&i);
+            i.wakeinprogress = false;
+        }
+
+        i.recv()
+    }
 
     /// Recieve a message or block until the specified duration expires then return an error condition.
     /// 
@@ -438,7 +485,6 @@ impl Endpoint {
     /// See `Message` for API dealing with messages.
     pub fn recvorblock(&self, duration: Timespec) -> IoResult<Message> {
         let mut when: Timespec = get_time();
-
         when = timespec::add(when, duration);
 
         let mut i = self.i.lock();

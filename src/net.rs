@@ -15,8 +15,8 @@ use std::intrinsics::transmute;
 use std::io::timer::sleep;
 use std::time::duration::Duration;
 
-use time::get_time;
-use time::Timespec;
+use get_time;
+use Timespec;
 
 use rawmessage::RawMessage;
 use endpoint::Endpoint;

@@ -77,6 +77,46 @@ Difference Of Channels
 
 A Rust channel produces two devices. One transmits messages and the other recieves messages. To produce a bi-directional channel you need to do some work. Water provides bi-directional communication with two endpoints. Also, water allows one endpoint to transmit to one or more endpoints. You can however use Water to produce Rust channel like behavior by creating a single net for each two endpoints, and only using one or the other for transmitting and one for receiving.
 
+A channel is typed to a specific message type although you can use enums to send multiple types of messages. The problem with the enum is that it is always the size of it's largest type therefore it becomes inefficient in memory/network bandwidth to send larger messages along side of small messages with a channel depending on how large the difference is in size. Water can relieve this problem as all messages are dynamically sized to their contents. Water also makes the transition onto the network or into another process easier to implement because you do not need to know the content of the message to optimize it (by reducing the size as you would have to do with an enum to reduce the size). So sending a one megabyte message following a signal message using Rust channels will consume one megabyte of memory bandwidth for both messages wasting a lot of memory bandwidth. For example:
+
+    enum Foo {
+        Apple,
+        Grape([u8, ..4096]),
+    }
+
+    fn main() {
+        let (atx, arx) = channel::<Foo>();
+        
+        atx.send(Foo::Apple);
+        atx.send(Foo::Grape([0u8, ..4096]));
+        
+        arx.recv();
+        arx.recv();
+    } 
+
+_A `size_of::<Foo>()` will return 4097 bytes, which includes the extra byte used to determine the type of the enum._
+
+Performance
+===
+
+Due to the differences in how Water works compared to Rust channels and considered the different designs comparing performnce between the two is similar to the saying of comparing apples to oranges. Water was build with a ethernet
+like network in mind supporting multiple endpoints all with a complex addressing with the ability to bridge to other network scheme where Rust channels were built with a multiple sender single reader or single sender and single reader.
+
+
+I tried to test them as well as I could but it seems that the the performance is fairly matched, however as you start alternating zero byte messages with larger size messages Water will begin to pull ahead because of the decreased memory bandwidth usage of Water compared to Rust channels. The tests below were performing with each implementation doing a ping pong type communication where a ping was a zero byte type and a pong was a multi-byte size. The multi-byte size is specified in the `size` column.
+
+    size        water (fast factor)
+     1B                                 // one byte
+    .2KB        1.0                     // 256 bytes
+    .5KB        1.0                     // 512 bytes
+     1KB        1.0                     // 1024 bytes
+     8KB        1.1
+    16KB        1.8
+    32KB        2.1                
+    64KB        2.1        
+
+_The tests even when running a large number of iterations showed variation but fairly stable results. As I decreased the size to zero byte transfers the native Rust channels was about ten microseconds faster roughly per iteration. This is a great outcome which shows that you can essentially get the power of Water with no significant cost to performance._
+
 Network Bridge Types Supported
 ===
 
@@ -87,8 +127,7 @@ Currently, the library only provides support for the TCP bridge, but I plan to a
 Performance 
 ===
 
-I recently did a pingpong test comparing the channels that Rust uses and water. The results were encouraging. It showed that my implementation was about 2x faster. The exact reasons I am unsure of. The test code is located in
-`/tests/pingpong.rs`. A implement using Rust channels can be found here, https://raw.githubusercontent.com/rust-lang/rust/master/src/test/bench/rt-messaging-ping-pong.rs
+I recently did a pingpong test comparing the channels that Rust uses and water. The results were encouraging. Water was just a bit slower which is expected since it performs more.
 
 _If you have any benchmarks or information please share it with me at kmcg3413@gmail.com_
 

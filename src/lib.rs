@@ -15,9 +15,12 @@
 //! the message. The clone messages are intra-process only but many endpoints can recieve.
 //!
 //! To see example usage checkout:
-//!               https://github.com/kmcguire3413/water.rs/tree/master/tests
-//!      In the tests directory you will find various test not only testing the functionality but
-//!      also demonstrating it. Also you can use this documentation as a reference.
+//!      https://github.com/kmcguire3413/water.rs/tree/master/tests
+//!
+//! In the tests directory you will find various test not only testing the functionality but
+//! also demonstrating it. Also you can use this documentation as a reference.
+//!
+//! _Also scattered throughout this document are some examples._
 //!
 //! _This library is still in a developmental state (alpha) and is subject to large breaking changes._
 //! Once all the design issues are worked out it will stabilize and become beta or release. Consider
@@ -26,9 +29,9 @@
 //! Also be sure to check out the README which is visible at https://github.com/kmcguire3413/water.rs - 
 //! it will detail more information about the library.
 
+extern crate test;
 extern crate time;
 
-pub use time::Timespec;
 pub use net::Net;
 pub use endpoint::Endpoint;
 pub use rawmessage::RawMessage;
@@ -42,14 +45,15 @@ pub use syncmessage::SyncMessage;
 pub use clonemessage::CloneMessage;
 pub use tcp::TcpBridgeConnector;
 pub use tcp::TcpBridgeListener;
-//pub use allocmutex::AllocMutex;
+
+pub use time::get_time;
+pub use time::Timespec;
+pub mod timespec;
 
 pub mod syncmessage;
 pub mod endpoint;
 pub mod net;
 pub mod rawmessage;
-pub mod timespec;
 pub mod tcp;
 pub mod message;
 pub mod clonemessage;
-//pub mod allocmutex;

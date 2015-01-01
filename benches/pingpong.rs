@@ -15,7 +15,7 @@ use water::Net;
 use std::thread::Thread;
 use std::time::duration::Duration;
 
-const BIGSIZE: uint = 1;
+const BIGSIZE: uint = 128;
 
 pub struct BencherHack {
     iterations: u64,
@@ -28,11 +28,11 @@ fn pingpong_water(b: &mut Bencher) {
     let h: &mut BencherHack = unsafe { transmute_copy(&b) };
 
     let start = get_time();
-    pingpong_water_run(1, 3200);
+    pingpong_water_run(1, 1000);
     let end = get_time();
     let dur = sub(end, start);
 
-    h.iterations = 3200;
+    h.iterations = 1000;
     h.dur = Duration::nanoseconds(dur.sec * NSINSEC + dur.nsec as i64);
     h.bytes = 0;
 }
@@ -42,11 +42,11 @@ fn pingpong_native(b: &mut Bencher) {
     let h: &mut BencherHack = unsafe { transmute_copy(&b) };
 
     let start = get_time();
-    pingpong_native_run(1, 3200);
+    pingpong_native_run(1, 1000);
     let end = get_time();
     let dur = sub(end, start);
 
-    h.iterations = 3200;
+    h.iterations = 1000;
     h.dur = Duration::nanoseconds(dur.sec * NSINSEC + dur.nsec as i64);
     h.bytes = 0;
 }

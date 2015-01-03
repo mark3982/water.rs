@@ -273,18 +273,7 @@ impl Endpoint {
         self.i.lock().net.getepcount()
     }
 
-    /// (internal usage) Give the endpoint a sync message.
-    //pub fn givesync(&mut self, msg: Message) -> bool {
-    //    let mut i = self.i.lock();
-    //    i.memoryused += msg.cap();
-    //    i.messages.push(msg);
-    //    drop(i);
-    //
-    //    self.wakeonewaiter();
-    //    true
-    //}
-
-    /// (internal usage) Give the endpoint a raw message.
+    /// _(internal usage)_ Give the endpoint a message.
     pub fn give(&mut self, msg: &Message) -> bool {
         let mut i = self.i.lock();
 
@@ -331,11 +320,9 @@ impl Endpoint {
         //println!("ep[{:p}] took message {:p}", &*i, msg);
         if msg.is_sync() {
             // The sync has to use a protected clone method.
-            //i.messages.push((*msg).internal_clone(0x879));
             i.messages.push_back((*msg).internal_clone(0x879));
         } else {
             // Everything else can be cloned like normal.
-            //i.messages.push((*msg).clone());
             i.messages.push_back((*msg).clone());
         }
 
@@ -413,7 +400,7 @@ impl Endpoint {
     /// Send a message, but leave from address fields alone.
     ///
     /// _If sync type use `syncsync` or `sendsyncx`._
-    pub fn sendx(&self, msg: &Message) -> uint {
+    pub fn sendx(&self, msg: Message) -> uint {
         let i = self.i.lock();
         let net = i.net.clone();
         drop(i);
@@ -423,7 +410,7 @@ impl Endpoint {
     /// Send a message, but mutates message from address fields with correct return address.
     ///
     /// _If sync type use `sendsync` or `sendsyncx`._
-    pub fn send(&self, msg: &mut Message) -> uint {
+    pub fn send(&self, msg: Message) -> uint {
         let i = self.i.lock();
         let net = i.net.clone();
         let sid = i.sid;
@@ -443,7 +430,7 @@ impl Endpoint {
         let mut msg = Message::new_sync(t);
         msg.dstsid = 1; // only local net
         msg.dsteid = 0; // everyone
-        self.sendsync(msg)
+        self.send(msg)
     }
 
     /// Easily sends a clone message by wrapping it into a
@@ -457,31 +444,7 @@ impl Endpoint {
         let mut msg = Message::new_clone(t);
         msg.dstsid = 1; // only local net
         msg.dsteid = 0; // everyone
-        self.send(&mut msg)
-    }
-
-
-    /// Send a sync message. This requires a special call since a 
-    /// sync message is unique and can not be cloned therefore we
-    /// must consume the argument passed to prevent the caller from
-    /// holding a copy or clone.
-    ///
-    /// See `sendsyncbytype` for easier calling.
-    pub fn sendsync(&self, msg: Message) -> uint {
-        let i = self.i.lock();
-        let net = i.net.clone();
-        let sid = i.sid;
-        let eid = i.eid;
-        drop(i);
-        net.sendsyncas(msg, sid, eid)
-    }
-
-    /// Send a sync message but do not set from fields.
-    pub fn sendsyncx(&self, msg: Message) -> uint {
-        let i = self.i.lock();
-        let net = i.net.clone();
-        drop(i);
-        net.sendsync(msg)
+        self.send(msg)
     }
 
     // This function is more on par for performance with the Rust channel

@@ -157,46 +157,30 @@ impl Net {
     } 
 
     /// Send message with specified from addresses.
-    pub fn sendas(&self, msg: &mut Message, fromsid: ID, fromeid: ID) -> uint {
+    pub fn sendas(&self, mut msg: Message, fromsid: ID, fromeid: ID) -> uint {
         msg.srcsid = fromsid;
         msg.srceid = fromeid;
         self.send(msg)
     }
 
     /// Send message.
-    pub fn send(&self, msg: &Message) -> uint {
-        if msg.is_sync() {
-            panic!("You must send a sync message with `sendsync` or `sendsyncas`!");
-        }
-
+    pub fn send(&self, msg: Message) -> uint {
         if msg.is_raw() {
             // Duplicate it to not share the buffer with the sender.
-            self.send_internal(&(msg.dup()))
+            self.send_internal(msg.dup())
         } else {
             self.send_internal(msg)
         }
     }
 
-    /// Consume the sync message and send with the specified from addresses.
-    pub fn sendsyncas(&self, mut msg: Message, frmsid: ID, frmeid: ID) -> uint {
-        msg.srcsid = frmsid;
-        msg.srceid = frmeid;
-        self.sendsync(msg)
-    }
-
-    /// Consume the sync message and send.
-    pub fn sendsync(&self, msg: Message) -> uint {
-        self.send_internal(&msg)
-    }
-
     // Try to give the message to all endpoints. The endpoints do the logic
     // to determine if they will recieve the message.
-    fn send_internal(&self, msg: &Message) -> uint {
+    fn send_internal(&self, msg: Message) -> uint {
         let mut ocnt = 0u;
 
         let mut i = self.i.lock();
         for ep in i.endpoints.iter_mut() {
-            if ep.give(msg) {
+            if ep.give(&msg) {
                 ocnt += 1;
             }
         }

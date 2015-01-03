@@ -96,7 +96,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
             };
             //println!("thread sending something");
             msgtosend.get_rawmutref().writestructref(0, &safestruct); 
-            let rby = ep.send(&mut msgtosend);
+            let rby = ep.send(msgtosend.clone());
             if rby < THREADCNT {
                 panic!("send {} less than {}", rby, THREADCNT);
             }
@@ -114,7 +114,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
         c:  0x10,
     };
     msgtosend.get_rawmutref().writestructref(0, &safestruct);
-    ep.send(&mut msgtosend);
+    ep.send(msgtosend);
 
     //println!("thread[{}]: exiting (sent buffer {})", dbgid, msgtosend.get_rawref().id());
     //loop { }

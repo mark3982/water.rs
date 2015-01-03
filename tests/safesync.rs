@@ -43,7 +43,7 @@ fn funnyworker(mut net: Net, dbgid: uint, dsteid: u64) {
     msg.dsteid = dsteid;    // specific end point
     msg.dstsid = 1;         // local net only
 
-    ep.sendsync(msg);
+    ep.send(msg);
 
     println!("thread[{}]: exiting", dbgid);
 }

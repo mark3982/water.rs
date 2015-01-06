@@ -26,16 +26,12 @@ pub struct BencherHack {
     bytes:      u64,
 }
 
-fn main() {
-    pingpong_water_run(4, 1000);
-}
-
 #[bench]
-fn pingpong_water(b: &mut Bencher) {
+fn pingpong_mpsc_water(b: &mut Bencher) {
     let h: &mut BencherHack = unsafe { transmute_copy(&b) };
 
     let start = get_time();
-    pingpong_water_run(1, 1000);
+    pingpong_mpsc_water_run(4, 1000);
     let end = get_time();
     let dur = sub(end, start);
 
@@ -45,11 +41,11 @@ fn pingpong_water(b: &mut Bencher) {
 }
 
 #[bench]
-fn pingpong_native(b: &mut Bencher) {
+fn pingpong_mpsc_native(b: &mut Bencher) {
     let h: &mut BencherHack = unsafe { transmute_copy(&b) };
 
     let start = get_time();
-    pingpong_native_run(1, 1000);
+    pingpong_mpsc_native_run(4, 1000);
     let end = get_time();
     let dur = sub(end, start);
 
@@ -63,32 +59,29 @@ enum NativeFoo {
     Grape([u8;BIGSIZE]),
 }
 
-fn pingpong_native_run(m: uint, n: uint) {
+fn pingpong_mpsc_native_run(m: uint, n: uint) {
     // Create pairs of tasks that pingpong back and forth.
     fn run_pair(n: uint) {
-        // Create a stream A->B
         let (atx, arx) = channel::<NativeFoo>();
-        // Create a stream B->A
-        let (btx, brx) = channel::<NativeFoo>();
+        let btx = atx.clone();
 
         let ta = Thread::spawn(move|| {
-            let (tx, rx) = (atx, brx);
             for _ in range(0, n) {
-                tx.send(NativeFoo::Apple);
-                rx.recv();
+                btx.send(NativeFoo::Apple);
             }
         });
 
         let tb = Thread::spawn(move|| {
-            let (tx, rx) = (btx, arx);
             for _ in range(0, n) {
-                rx.recv();
-                tx.send(NativeFoo::Grape([0u8;BIGSIZE]));
+                atx.send(NativeFoo::Grape([0u8;BIGSIZE]));
             }
         });
 
-        drop(ta);
-        drop(tb);
+       let tc = Thread::spawn(move|| {
+            for _ in range(0, n * 2) {
+                arx.recv();
+            }
+        });
     }
 
     for _ in range(0, m) {
@@ -101,28 +94,29 @@ struct FooGrape {
     field:  [u8;BIGSIZE],
 }
 
-fn pingpong_water_run(m: uint, n: uint) {
+fn pingpong_mpsc_water_run(m: uint, n: uint) {
     fn run_pair(n: uint) {
         let mut net = Net::new(100);
         let epa = net.new_endpoint();
         let epb = net.new_endpoint();
-
+        let epa2 = epa.clone();
         let ta = Thread::spawn(move || {
             for _ in range(0, n) {
                 epa.sendsynctype(FooApple);
-                epa.recvorblockforever().ok();
             }
         });
 
         let tb = Thread::spawn(move || {
             for _ in range(0, n) {
-                epb.recvorblockforever().ok();
-                epb.sendsynctype(FooGrape { field: [0u8;BIGSIZE] });
+                epa2.sendsynctype(FooGrape { field: [0u8;BIGSIZE] });
             }
         });
 
-        drop(ta);
-        drop(tb);
+        let tc = Thread::spawn(move || {
+            for x in range(0, n * 2) {
+                epb.recvorblockforever();
+            }
+        });
     }
 
     for _ in range(0u, m) {

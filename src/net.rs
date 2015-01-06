@@ -2,6 +2,14 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+//!
+//! The `Net` forms the central point in which endpoints can be created from, and
+//! used to communicate with other endpoints on the same net or with endpoints on
+//! another net through the usage of bridges.
+//!
+//! _At this time a TCP bridge has been implemented._
+//!
+
 extern crate core;
 
 use std::sync::Arc;
@@ -14,6 +22,7 @@ use std::intrinsics::copy_memory;
 use std::intrinsics::transmute;
 use std::io::timer::sleep;
 use std::time::duration::Duration;
+use std::thread::Thread;
 
 use get_time;
 use Timespec;
@@ -55,6 +64,7 @@ struct Internal {
 /// crate._
 pub struct Net {
     i:      Arc<Mutex<Internal>>,
+    ui:     *mut Internal,
     sid:    ID,
 }
 
@@ -63,9 +73,12 @@ impl Clone for Net {
         Net {
             i:      self.i.clone(),
             sid:    self.sid,
+            ui:     self.ui,
         }
     }
 }
+
+unsafe impl Send for Net { }
 
 const NET_MAXLATENCY: i64 = 100000;    //  100ms
 const NET_MINLATENCY: i64 = 100;      //   0.1ms
@@ -92,11 +105,16 @@ impl Net {
             sleep(Duration::microseconds(latency));
             let ctime: Timespec = get_time();
             {
-                let mut i = net.i.lock();
+                let mut i = net.i.lock().unwrap();
 
                 wokesomeone = false;
                 for ep in i.endpoints.iter_mut() {
-                    if ctime > ep.getwaketime() {
+                    // The `ctime` check is for sleeping who want to timeout after
+                    // a certain amount of time. The `hasmessages()` and `sleepercount()`
+                    // clause is to help wake sleepers that did not get properly woken. This
+                    // is due to changes and problems with the changes so the second clause
+                    // is a workaround which i would love to get rid of
+                    if ctime > ep.getwaketime() || (ep.hasmessages() && ep.sleepercount() > 0) {
                         if ep.wakeonewaiter() {
                             wokesomeone = true;
                         }
@@ -121,23 +139,36 @@ impl Net {
 
     /// Return the number of endpoints on this net.
     pub fn getepcount(&self) -> uint {
-        self.i.lock().endpoints.len()
+        self.i.lock().unwrap().endpoints.len()
     }
 
     /// Create new net with the specified ID.
+    ///
+    /// You can use the same ID for multiple nets and they will
+    /// properly bridge except traffic will not be segmented 
+    /// between the two nets. This may be desired. You should
+    /// use an ID that is `100` or above. 
+    ///
+    ///     use water::Net;
+    ///     let net = Net::new(100);
+    ///
     pub fn new(sid: ID) -> Net {
-        let net = Net {
+        let mut net = Net {
             i:  Arc::new(Mutex::new(Internal {
                 endpoints:      Vec::new(),
                 hueid:          0x10000,
             })),
+            ui:     0 as *mut Internal,
             sid:    sid,
         };
+
+        // Allow ergonomic unprotected access.
+        net.ui = unsafe { transmute(&*net.i.lock().unwrap()) };
 
         // Spawn a helper thread which provides the ability
         // for threads to wait for messages and have a timeout. 
         let netclone = net.clone();
-        spawn(move || { Net::sleeperthread(netclone) });
+        Thread::spawn(move || { Net::sleeperthread(netclone) }).detach();
 
         net
     }
@@ -145,6 +176,11 @@ impl Net {
     // Listens for and accepts TCP connections from remote
     // networks and performs simple routing between the two
     // networks.
+    ///
+    ///      use water::Net;
+    ///      let net = Net::new(100);
+    ///      net.tcplisten(String::from_str("localhost:40100"))
+    ///
     pub fn tcplisten(&self, addr: String) -> TcpBridgeListener {
         tcp::listener::TcpBridgeListener::new(self, addr)
     }
@@ -152,6 +188,11 @@ impl Net {
     // Tries to maintain a TCP connecton to the specified remote
     // network and performs simple routing between the two 
     // networks.
+    ///
+    ///      use water::Net;
+    ///      let net = Net::new(100);
+    ///      net.tcpconnect(String::from_str("localhost:40100"))
+    ///    
     pub fn tcpconnect(&self, addr: String) -> TcpBridgeConnector {
         tcp::connector::TcpBridgeConnector::new(self, addr)
     } 
@@ -178,9 +219,11 @@ impl Net {
     fn send_internal(&self, msg: Message) -> uint {
         let mut ocnt = 0u;
 
-        let mut i = self.i.lock();
-        for ep in i.endpoints.iter_mut() {
-            if ep.give(&msg) {
+        let i: &Internal = unsafe { transmute(self.ui) };
+
+        for ep in i.endpoints.iter() {
+            let _ep: &mut Endpoint = unsafe { transmute(ep) };
+            if _ep.give(&msg) {
                 ocnt += 1;
             }
         }
@@ -188,15 +231,32 @@ impl Net {
         ocnt
     }
 
+    /// Returns a ID that is unique to this net. It does this by tracking
+    /// all IDs used and always returns one higher than the highest ID endpoint
+    /// that is currently on the network.
+    ///
+    ///
+    ///      use water::Net;
+    ///      let mut net = Net::new(100);
+    ///      let id = net.get_neweid();
+    ///      let ep = net.new_endpoint_withid(id);                   // SAME
+    ///      let ep = net.new_endpoint();                            // SAME
+    ///
     pub fn get_neweid(&mut self) -> ID {
-        let mut i = self.i.lock();
+        let mut i = self.i.lock().unwrap();
         let eid = i.hueid;
         i.hueid += 1;
         eid
     }
-    
+
+    /// Return a new endpoint with the specified ID.
+    ///
+    ///      use water::Net;
+    ///      let mut net = Net::new(100);
+    ///      let id = net.get_neweid();
+    ///      let ep = net.new_endpoint_withid(id);     // SAME
     pub fn new_endpoint_withid(&mut self, eid: ID) -> Endpoint {
-        let mut i = self.i.lock();
+        let mut i = self.i.lock().unwrap();
 
         if eid > i.hueid {
             i.hueid = eid + 1;
@@ -209,12 +269,14 @@ impl Net {
         ep
     }
 
+    /// Not recommend for usage.
     pub fn add_endpoint(&mut self, ep: Endpoint) {
-        self.i.lock().endpoints.push(ep);
+        self.i.lock().unwrap().endpoints.push(ep);
     }
 
+    /// Not recommened for usage.
     pub fn drop_endpoint(&mut self, thisep: &Endpoint) {
-        let mut lock = self.i.lock();
+        let mut lock = self.i.lock().unwrap();
         let endpoints = &mut lock.endpoints;
 
         for i in range(0u, endpoints.len()) {
@@ -228,8 +290,9 @@ impl Net {
         }
     }
 
+    /// Return a new endpoint with an automatically assigned unique ID.
     pub fn new_endpoint(&mut self) -> Endpoint {
-        let mut i = self.i.lock();
+        let mut i = self.i.lock().unwrap();
 
         let ep = Endpoint::new(self.sid, i.hueid, self.clone());
         i.hueid += 1;
@@ -241,6 +304,7 @@ impl Net {
         ep
     }
     
+    /// Return the network ID.
     pub fn getserveraddr(&self) -> ID {
         self.sid
     }

@@ -69,7 +69,7 @@ impl SyncMessage {
     /// to take it can return it. Any others that fail to take it as valid
     /// will simply drop the message and try to read the next.
     pub fn takeasvalid(&self) -> bool {
-        let mut lock = self.valid.lock();
+        let mut lock = self.valid.lock().unwrap();
         if *lock {
             // Prevent anyone else from taking this message.
             *lock = false;

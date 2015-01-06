@@ -70,7 +70,8 @@ pub fn thread_rx(mut which: Which<TcpBridgeListener, TcpBridgeConnector>, mut ep
         msgsize -= 1 + 8 * 4;
 
         // Read the actual raw message part of the message.
-        let mut vbuf: Vec<u8> = Vec::from_elem(msgsize as uint, 0u8);
+        let mut vbuf: Vec<u8> = Vec::with_capacity(msgsize as uint);
+        unsafe { vbuf.set_len(msgsize as uint) };
         stream.read_at_least(msgsize as uint, vbuf.as_mut_slice());
 
         // We currently only support raw messages at the moment, since

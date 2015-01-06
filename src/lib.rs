@@ -53,9 +53,11 @@ pub use tcp::TcpBridgeListener;
 pub use time::get_time;
 /// Specifies a fairly accurate time.
 pub use time::Timespec;
+///
+pub use queue::Queue;
+
 /// Provides some utility functions for a `Timespec`.
 pub mod timespec;
-
 /// A sync message is a unique type instance. A sub-type of Message.
 pub mod syncmessage;
 /// The sender/receiver combination.
@@ -71,4 +73,6 @@ pub mod message;
 /// A clone message is a non-unique type instance. A sub-type of Message.
 pub mod clonemessage;
 /// Provides functionality of a native Rust channel.
-pub mod compat;
+//pub mod compat;
+/// Provides a high throughput MPMC queue implementation.
+pub mod queue;

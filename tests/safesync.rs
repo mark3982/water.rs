@@ -13,6 +13,7 @@ use water::RawMessage;
 use water::NoPointers;
 use water::Message;
 
+use std::thread::Thread;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::io::timer::sleep;
@@ -58,26 +59,13 @@ fn syncio() {
     // Spawn threads.
     let netclone = net.clone();
     let eid = ep.geteid();
-    spawn(move || { funnyworker(netclone, 0, eid); });
+    let ta = Thread::spawn(move || { funnyworker(netclone, 0, eid); });
 
     let result = ep.recvorblock(Timespec { sec: 3, nsec: 0 });
 
     let msg: Arc<Foo> = result.ok().get_sync().get_payload();
 
-    // If you want to properly check for a result you can do
-    // this (below).
-    /*
-    match result {
-        Ok(msg) => {
-            match msg.payload {
-                let foo: Foo = msg.get_sync().get_payload();
-
-        },
-        Err(err) => {
-            panic!("never got message!");
-        }
-    }
-    */
+    drop(ta);
 }
 
 fn main() {

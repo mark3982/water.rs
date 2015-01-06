@@ -114,7 +114,7 @@ impl RawMessage {
 
     /// Duplicate the raw message creating a new one not sharing the buffer.
     pub fn dup(&self) -> RawMessage {
-        RawMessage {i:  Arc::new(Mutex::new(self.i.lock().dup()))}
+        RawMessage {i:  Arc::new(Mutex::new(self.i.lock().unwrap().dup()))}
     }
 
     /// Create a raw message from a &str type.
@@ -123,43 +123,43 @@ impl RawMessage {
     pub fn new_fromstr(s: &str) -> RawMessage {
         let m = RawMessage::new(s.len());
         unsafe {
-            copy_memory(m.i.lock().buf, *(transmute::<&&str, *const uint>(&s)) as *const u8, s.len());
+            copy_memory(m.i.lock().unwrap().buf, *(transmute::<&&str, *const uint>(&s)) as *const u8, s.len());
         }
         m
     }
 
     /// Get the capacity.
     pub fn cap(&self) -> uint {
-        self.i.lock().cap
+        self.i.lock().unwrap().cap
     }
 
     /// Set the length.
     ///
     /// The length must not exceed the capacity or it will panic.
     pub fn setlen(&mut self, len: uint) {
-        self.i.lock().setlen(len);
+        self.i.lock().unwrap().setlen(len);
     }
 
     /// Get the length.
     pub fn len(&self) -> uint {
-        self.i.lock().len
+        self.i.lock().unwrap().len
     }
 
     /// Get unique ID for this message for this process.
     ///
     /// The unique ID will differ across process boundaries.
     pub fn id(&self) -> uint {
-        self.i.lock().buf as uint
+        self.i.lock().unwrap().buf as uint
     }
 
     /// Resize the capacity of the message keeping the old contents or truncating them.
     pub fn resize(&mut self, newcap: uint) {
-        self.i.lock().resize(newcap);
+        self.i.lock().unwrap().resize(newcap);
     }
 
     /// Write into the buffer from a byte slice.
     pub fn write_from_slice(&mut self, mut offset: uint, f: &[u8]) {
-        let mut i = self.i.lock();
+        let mut i = self.i.lock().unwrap();
 
         if offset + f.len() > i.cap {
             panic!("write past end of buffer");
@@ -178,7 +178,7 @@ impl RawMessage {
     /// Return a reference to a mutable byte slice that can be used to alter the contents.
     pub fn as_mutslice(&mut self) -> &mut [u8] {
         unsafe {
-            let i = self.i.lock();
+            let i = self.i.lock().unwrap();
             transmute(raw::Slice { data: i.buf as *const u8, len: i.len })
         }        
     }
@@ -186,7 +186,7 @@ impl RawMessage {
     /// Return a reference to a immutable byte slice.
     pub fn as_slice(&self) -> &[u8] {
         unsafe {
-            let i = self.i.lock();
+            let i = self.i.lock().unwrap();
             transmute(raw::Slice { data: i.buf as *const u8, len: i.len })
         }
     }
@@ -195,7 +195,7 @@ impl RawMessage {
     ///
     /// The offset must not exceed the capacity. The length is not updated.
     pub fn writestructref<T>(&mut self, offset: uint, t: &T) {
-        let i = self.i.lock();
+        let i = self.i.lock().unwrap();
 
         if offset + size_of::<T>() > i.cap {
             panic!("write past end of buffer!")
@@ -232,7 +232,7 @@ impl RawMessage {
 
     /// This is the same as readstructref except it is an unsafe call.
     pub unsafe fn readstructunsaferef<T>(&self, offset: uint, t: &mut T) {
-        let i = self.i.lock();
+        let i = self.i.lock().unwrap();
 
         if offset + size_of::<T>() > i.cap {
             panic!("read past end of buffer!")

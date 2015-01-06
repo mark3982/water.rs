@@ -1,6 +1,7 @@
 extern crate water;
 extern crate time;
 
+use std::sync::mpsc::channel;
 use water::Net;
 use time::Timespec;
 use std::thread::Thread;
@@ -24,7 +25,7 @@ fn pingpong_native(m: uint, n: uint) {
         // Create a stream B->A
         let (btx, brx) = channel::<()>();
 
-        spawn(move|| {
+        let ta = Thread::spawn(move|| {
             let (tx, rx) = (atx, brx);
             for _ in range(0, n) {
                 tx.send(());
@@ -32,13 +33,16 @@ fn pingpong_native(m: uint, n: uint) {
             }
         });
 
-        spawn(move|| {
+        let tb = Thread::spawn(move|| {
             let (tx, rx) = (btx, arx);
             for _ in range(0, n) {
                 rx.recv();
                 tx.send(());
             }
         });
+
+        drop(ta);
+        drop(tb);
     }
 
     for _ in range(0, m) {

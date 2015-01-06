@@ -47,7 +47,7 @@ impl Clone for TcpBridgeConnector {
 impl TcpBridgeConnector {
     pub fn terminate(&mut self) {
         // Set termination flag to catch connection loop.
-        let mut i = self.i.lock();
+        let mut i = self.i.lock().unwrap();
         i.terminate = true;
         if i.ep.is_none() {
             // Early exit. It seems the main thread has not had
@@ -68,11 +68,11 @@ impl TcpBridgeConnector {
     }
 
     pub fn connected(&self) -> bool {
-        self.i.lock().connected
+        self.i.lock().unwrap().connected
     }
 
     pub fn setconnected(&mut self, connected: bool) {
-        self.i.lock().connected = connected;
+        self.i.lock().unwrap().connected = connected;
     }
 
     pub fn thread(bridge: TcpBridgeConnector) {
@@ -80,11 +80,11 @@ impl TcpBridgeConnector {
         // blocking the calling thread. It should be easier to add
         // in blocking if that is desired.
         loop {
-            let result = TcpStream::connect(bridge.i.lock().addr.as_slice());
+            let result = TcpStream::connect(bridge.i.lock().unwrap().addr.as_slice());
 
             if result.is_err() {
                 // Just keep trying, unless instructed to terminate.
-                if bridge.i.lock().terminate {
+                if bridge.i.lock().unwrap().terminate {
                     return;
                 }
                 continue;
@@ -92,19 +92,19 @@ impl TcpBridgeConnector {
 
             let stream = result.unwrap();
 
-            if bridge.i.lock().terminate {
+            if bridge.i.lock().unwrap().terminate {
                 return;
             }
 
             // The same endpoint is shared between RX and TX.
-            let mut lock = bridge.i.lock();
+            let mut lock = bridge.i.lock().unwrap();
             let mut ep = Endpoint::new(!0u64, lock.net.get_neweid(), lock.net.clone());
             drop(lock);
             // Get unique group ID for control messages.
-            ep.setgid(bridge.i.lock().net.get_neweid()); 
-            bridge.i.lock().net.add_endpoint(ep.clone());
+            ep.setgid(bridge.i.lock().unwrap().net.get_neweid()); 
+            bridge.i.lock().unwrap().net.add_endpoint(ep.clone());
 
-            if bridge.i.lock().terminate {
+            if bridge.i.lock().unwrap().terminate {
                 return;
             }
 
@@ -114,24 +114,24 @@ impl TcpBridgeConnector {
             let _bridge = bridge.clone();
             let rxthread = Thread::spawn(move || { thread_rx(Which::Connector(_bridge), _ep, _stream); });
             let _ep = ep.clone();
-            let _sid = bridge.i.lock().net.getserveraddr();
+            let _sid = bridge.i.lock().unwrap().net.getserveraddr();
             let _bridge = bridge.clone();
             let txthread = Thread::spawn(move || { thread_tx(Which::Connector(_bridge), _ep, stream, _sid); });
 
             // Set endpoint into bridge.
-            bridge.i.lock().ep = Option::Some(ep);
+            bridge.i.lock().unwrap().ep = Option::Some(ep);
 
             // Wait for RX and TX to terminate.. then try connection
             // again until we are requested to terminate.
             rxthread.join();
             txthread.join();
 
-            bridge.i.lock().connected = false;
+            bridge.i.lock().unwrap().connected = false;
 
             // The TX may have terminated the RX and we will make it
             // here. We need to check the terminate flag to see if 
             // we also need to exit.
-            if bridge.i.lock().terminate {
+            if bridge.i.lock().unwrap().terminate {
                 return;
             }
         }

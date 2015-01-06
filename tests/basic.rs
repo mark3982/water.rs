@@ -1,3 +1,4 @@
+#![feature(slicing_syntax)]
 #![allow(deprecated)]
 extern crate time;
 extern crate water;
@@ -170,7 +171,7 @@ fn _basicio() {
     //println!("spawning threads");
     // Spawn threads.
 
-    let mut threadterm = [0u, ..THREADCNT];
+    let mut threadterm = [0u;THREADCNT];
 
     let mut threads: Vec<JoinGuard<()>> = Vec::new();
 

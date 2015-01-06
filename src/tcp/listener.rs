@@ -54,9 +54,9 @@ impl TcpBridgeListener {
     /// existing connections causing them to be dropped, but I think that
     /// is pending implementation._
     pub fn terminate(&mut self) {
-        self.i.lock().terminate = true;
-        if self.i.lock().acceptor.is_some() {
-            self.i.lock().acceptor.as_mut().unwrap().close_accept();
+        self.i.lock().unwrap().terminate = true;
+        if self.i.lock().unwrap().acceptor.is_some() {
+            self.i.lock().unwrap().acceptor.as_mut().unwrap().close_accept();
         }
         // We have to exit because the RX, TX, and
         // accept threads might try to take lock,
@@ -65,23 +65,23 @@ impl TcpBridgeListener {
 
     /// _(internal)_ This will set the acceptor.
     pub fn setacceptor(&mut self, op: Option<TcpAcceptor>) {
-        self.i.lock().acceptor = op;
+        self.i.lock().unwrap().acceptor = op;
     }
 
     /// This will determine if this listener has been slated for termination.
     pub fn getterminate(&self) -> bool {
-        self.i.lock().terminate
+        self.i.lock().unwrap().terminate
     }
 
     /// Get the address used to listen on. It is a String with the format
     /// "<host/ip>:<port>".
     pub fn getaddr(&self) -> String {
-        self.i.lock().addr.clone()
+        self.i.lock().unwrap().addr.clone()
     }
 
     /// _(internal)_ Increment the client count.
     pub fn clientcountinc(&mut self) {
-        let mut i = self.i.lock();
+        let mut i = self.i.lock().unwrap();
         i.clientcount += 1;
     }
 
@@ -89,18 +89,18 @@ impl TcpBridgeListener {
     /// not mean that it has been negotiated therefore you should likely check `getnegcount`
     /// instead. This is just left in for testing primarily.
     pub fn getclientcount(&self) -> u64 {
-        self.i.lock().clientcount
+        self.i.lock().unwrap().clientcount
     }
 
     pub fn negcountinc(&mut self) {
-        let mut i = self.i.lock();
+        let mut i = self.i.lock().unwrap();
         i.negcount += 1;
     }
 
     /// Get negotiated count. This represents the number of current successfully
     /// negotiated links. It may be lower than `getclientcount()`.
     pub fn getnegcount(&self) -> u64 {
-        self.i.lock().negcount
+        self.i.lock().unwrap().negcount
     }
 
     pub fn thread_accept(mut bridge: TcpBridgeListener) {
@@ -125,7 +125,7 @@ impl TcpBridgeListener {
 
                     // The same endpoint is shared between RX and TX.
                     {
-                        let net = &mut bridge.i.lock().net;
+                        let net = &mut bridge.i.lock().unwrap().net;
                         let mut ep = Endpoint::new(!0u64, net.get_neweid(), net.clone());
                         // Get unique group ID for control messages.
                         ep.setgid(net.get_neweid());

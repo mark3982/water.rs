@@ -540,7 +540,6 @@ impl Endpoint {
         when = timespec::add(when, duration);
 
         //i.wakeinprogress = false;
-
         while ui.messages.len() < 1 {
             // The wakeup thread will wake everyone up at or beyond
             // this specified time. Then anyone who needs to sleep
@@ -550,13 +549,14 @@ impl Endpoint {
             //    i.wakeupat = when;
             //}
 
-            //println!("ep.id:{:p} sleeping", &*i);
             //i.slpcnt.fetch_add(1, Ordering::SeqCst);
+            //i.slpcnt.fetch_sub(1, Ordering::SeqCst);
+
             //let cwaker: &Condvar = unsafe { transmute(&i.cwaker) };
             //println!("check {:p} with {:p}", cwaker, &i.cwaker);
             //i = cwaker.wait(i).unwrap();
-            //Thread::yield_now();
-            //i.slpcnt.fetch_sub(1, Ordering::SeqCst);
+            Thread::yield_now();
+            
             //println!("ep.id:{:p} woke", &*i);
             //i.wakeinprogress = false;
 

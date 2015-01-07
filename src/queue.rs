@@ -37,7 +37,7 @@ impl<T> Queue<T> {
         }
     }
 
-    pub fn put(&mut self, t: T) {
+    pub fn put(&self, t: T) {
         let item: *mut Item<T> = unsafe { transmute(box Item {
             next:       AtomicPtr::new(0 as *mut Item<T>),
             prev:       AtomicPtr::new(0 as *mut Item<T>),
@@ -75,7 +75,7 @@ impl<T> Queue<T> {
         self.len.load(Ordering::Relaxed)
     }
 
-    pub fn dbg(&mut self) {
+    pub fn dbg(&self) {
         unsafe {
         let mut cur: *mut Item<T> = self.ptr.load(Ordering::SeqCst);
         println!("queue:dbg:");
@@ -95,7 +95,7 @@ impl<T> Queue<T> {
     }
 
     /// Frees anything after `after` but not `after` itself.
-    fn taildealloc(&mut self, after: *mut Item<T>) {
+    fn taildealloc(&self, after: *mut Item<T>) {
         unsafe {
             let mut cur = (*after).next.load(Ordering::SeqCst);
             while cur != 0 as *mut Item<T> {
@@ -108,7 +108,7 @@ impl<T> Queue<T> {
         }
     }
 
-    pub fn get(&mut self) -> Option<T> {
+    pub fn get(&self) -> Option<T> {
         unsafe {
             //println!("get");
             let mut first = true;
@@ -140,9 +140,12 @@ impl<T> Queue<T> {
             // everything after the lst can be released, therefore let us release
             // them. This may be called a lot if only one item is left and it is
             // set as the `lst`.
+            //
+            // Also, allow only freeing after so many have built up in hopes of
+            // increasing cache effectiveness.
             if  self.rinside.load(Ordering::SeqCst) == 1 && 
                 (*cur).needrel.load(Ordering::SeqCst)
-            {
+            { 
                 self.taildealloc(cur);
             }
 

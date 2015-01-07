@@ -13,6 +13,7 @@ use water::Timespec;
 use water::timespec::add;
 use water::timespec::sub;
 use water::timespec::NSINSEC;
+//use water::channel;
 
 use water::Net;
 use std::thread::Thread;
@@ -62,6 +63,19 @@ enum NativeFoo {
     Apple,
     Grape([u8;BIGSIZE]),
 }
+
+/*
+struct NativeMaker;
+struct WaterMaker;
+
+trait Maker<T, U, V> {
+    fn makechannels() -> (T<V>, U<V>);
+}
+
+impl Maker<compat NativeMaker {
+
+}
+*/
 
 fn pingpong_native_run(m: uint, n: uint) {
     // Create pairs of tasks that pingpong back and forth.

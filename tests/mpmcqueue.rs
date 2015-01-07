@@ -56,7 +56,7 @@ fn mpscqueue_run(m: uint, n: uint) {
                 loop {
                     match q3.get() {
                         Some(val) => {
-                            println!("got:{}/{} val:{}", x, n * 2, val);
+                            //println!("got:{}/{} val:{}", x, n * 2, val);
                             x += 1;
                             break;
                         }

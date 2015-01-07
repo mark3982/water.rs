@@ -26,7 +26,7 @@ unsafe impl Send for Internal{}
 
 impl Drop for Internal {
     fn drop(&mut self) {
-        unsafe { deallocate(self.buf, self.cap, size_of::<uint>()); }
+        //unsafe { deallocate(self.buf, self.cap, size_of::<uint>()); }
     }
 }
 

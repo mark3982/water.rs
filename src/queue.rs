@@ -101,7 +101,7 @@ impl<T> Queue<T> {
             while cur != 0 as *mut Item<T> {
                 // Deallocate the memory consumed by this entry.
                 let ncur = (*cur).next.load(Ordering::SeqCst);
-                //deallocate(cur as *mut u8, size_of::<Item<T>>(), align_of::<Item<T>>());
+                deallocate(cur as *mut u8, size_of::<Item<T>>(), align_of::<Item<T>>());
                 cur = ncur;
             }
             (*after).next.store(0 as *mut Item<T>, Ordering::SeqCst);

@@ -106,7 +106,6 @@ impl Net {
             let ctime: Timespec = get_time();
             {
                 let mut i = net.i.lock().unwrap();
-
                 wokesomeone = false;
                 for ep in i.endpoints.iter_mut() {
                     // The `ctime` check is for sleeping who want to timeout after
@@ -115,9 +114,8 @@ impl Net {
                     // is due to changes and problems with the changes so the second clause
                     // is a workaround which i would love to get rid of
                     if ctime > ep.getwaketime() || (ep.hasmessages() && ep.sleepercount() > 0) {
-                        if ep.wakeonewaiter() {
-                            wokesomeone = true;
-                        }
+                        println!("sleeper trying to wake {}", ep.id());
+                        ep.wakeonewaiter();
                     }
                 }
             }
@@ -167,8 +165,8 @@ impl Net {
 
         // Spawn a helper thread which provides the ability
         // for threads to wait for messages and have a timeout. 
-        let netclone = net.clone();
-        Thread::spawn(move || { Net::sleeperthread(netclone) }).detach();
+        //let netclone = net.clone();
+        //Thread::spawn(move || { Net::sleeperthread(netclone) }).detach();
 
         net
     }
@@ -219,8 +217,11 @@ impl Net {
     fn send_internal(&self, msg: Message) -> uint {
         let mut ocnt = 0u;
 
+        // Just to be safe I only want to call immutable methods
+        // on endpoints since we are not locking and as long as
+        // it is sync this is okay, but I do need to force the
+        // reference to a mutable one.
         let i: &Internal = unsafe { transmute(self.ui) };
-
         for ep in i.endpoints.iter() {
             let _ep: &mut Endpoint = unsafe { transmute(ep) };
             if _ep.give(&msg) {

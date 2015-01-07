@@ -2,9 +2,11 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+use std;
 use std::sync::Arc;
 use std::sync::atomic;
 use std::sync::atomic::AtomicUint;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::ptr;
 use std::rt::heap::allocate;
@@ -94,22 +96,42 @@ impl<T> IoResult<T> {
     }
 }
 
+struct SleepToken {
+    condvar:        Condvar,
+    mutex:          Mutex<()>,
+}
+
+impl SleepToken {
+    pub fn new() -> SleepToken {
+        SleepToken {
+            condvar:    Condvar::new(),
+            mutex:      Mutex::new(()),
+        }
+    }
+
+    pub fn wait(&self) {
+        let lock = self.mutex.lock().unwrap();
+        self.condvar.wait(lock).unwrap();
+    }
+
+    pub fn notify_all(&self) {
+        self.condvar.notify_all();
+    }
+}
+
 struct Internal {
-    cwaker:         Condvar,
+    stoken:         SleepToken,
     messages:       Queue<Message>,
     wakeupat:       Timespec,
-    wakeinprogress: bool,
+    memoryused:     AtomicUint,
+    net:            Net,
+    refcnt:         AtomicUint,
+    slpcnt:         AtomicUint,
     limitpending:   uint,
     limitmemory:    uint,
-    memoryused:     uint,
-
     eid:            u64,
     sid:            u64,
     gid:            u64,
-    net:            Net,
-    refcnt:         uint,
-
-    slpcnt:         AtomicUint,
 }
 
 unsafe impl Send for Internal { }
@@ -131,8 +153,11 @@ unsafe impl Send for Internal { }
 ///
 /// An example of using an endpoint like a channel:
 /// 
+///     #![allow(unused_results)]
+///     #![allow(unused_must_use)]
 ///     use water::Net;
 ///     use water::Timespec;
+///     use std::sync::mpsc::channel;
 ///
 ///     // Create a Rust channel.     
 ///     let (tx, rx) = channel::<uint>();
@@ -155,7 +180,7 @@ unsafe impl Send for Internal { }
 /// much more powerful in that it is bi-directional and can handle joining many endpoints into
 /// a single net where they can all communicate together.
 pub struct Endpoint {
-    i:          Arc<Mutex<Internal>>,
+    i:          Arc<Internal>,
     ui:         *mut Internal,
 }
 
@@ -166,7 +191,9 @@ impl Clone for Endpoint {
     /// duplicate the endpoint, but rather gives you a second handle to access it. This is
     /// a common operation.
     fn clone(&self) -> Endpoint {
-        self.i.lock().unwrap().refcnt += 1;
+        let i: &mut Internal = unsafe { transmute (self.ui) };
+
+        i.refcnt.fetch_add(1, Ordering::SeqCst);
         Endpoint {
             i:          self.i.clone(),
             ui:         self.ui,
@@ -181,20 +208,10 @@ impl Clone for Endpoint {
 /// be truly dropped and deallocated with out manual intervention.
 impl Drop for Endpoint {
     fn drop(&mut self) {
-        let mut lock = self.i.lock().unwrap();
-        lock.refcnt -= 1;
-        // Only call when one is left which we should be able to safely assume
-        // is owned by the `Net` instance. This will let the net drop it's instance
-        // which will call this function again, but that time `refcnt` will be zero
-        // so we will just skip this code block and drop like normal.
-        if lock.refcnt == 1 {
-            // Notify that the `Net` now contains the only
-            // instance of ourselves. We need to drop the
-            // lock because we will get called again, but
-            // we need to have a way to call the net
-            // method after we drop the lock.
-            let mut net = lock.net.clone();
-            drop(lock);
+        let i: &mut Internal = unsafe { transmute (self.ui) };
+        let refcnt = i.refcnt.fetch_sub(1, Ordering::SeqCst) - 1;
+        if refcnt == 1 {
+            let mut net = i.net.clone();
             net.drop_endpoint(self);
         }
     }
@@ -225,7 +242,7 @@ impl Internal {
 
             let msg = result.unwrap().dup_ifok();
 
-            self.memoryused -= msg.cap();
+            self.memoryused.fetch_sub(msg.cap(), Ordering::SeqCst);
 
             match msg.payload {
                 MessagePayload::Raw(_) => { return IoResult::Ok(msg.dup()); },
@@ -248,33 +265,31 @@ impl Endpoint {
     /// be unique except across process boundaries. This is the
     /// actual memory address of the internal structure.
     pub fn id(&self) -> uint {
-        unsafe { transmute(&*self.i.lock().unwrap()) }
+        self.ui as uint
     }
 
     /// Create a new endpoint by specifying the system ID, endpoint ID, and the
     /// network.
     pub fn new(sid: u64, eid: u64, net: Net) -> Endpoint {
         let mut ep = Endpoint {
-            i:  Arc::new(Mutex::new(Internal {
+            i:  Arc::new(Internal {
                 messages:       Queue::new(),
-                cwaker:         Condvar::new(),
+                stoken:         SleepToken::new(),
                 wakeupat:       Timespec { nsec: 0i32, sec: 0x7fffffffffffffffi64 },
-                wakeinprogress: false,
                 limitpending:   0,
                 limitmemory:    0,
-                memoryused:     0,
+                memoryused:     AtomicUint::new(0),
                 sid:            sid,
                 eid:            eid,
                 net:            net,
                 gid:            UNUSED_ID,
-                refcnt:         1,
+                refcnt:         AtomicUint::new(1),
                 slpcnt:         AtomicUint::new(0),
-            })),
+            }),
             ui: 0 as *mut Internal,
         };
 
-        // Allows access to internal with out locking.
-        ep.ui = unsafe { transmute(&*ep.i.lock().unwrap()) };
+        ep.ui = unsafe { transmute(&*(ep.i)) };
 
         ep
     }
@@ -282,17 +297,17 @@ impl Endpoint {
     /// Get the time at which this endpoint should be woken. This is used to see when to
     /// wake the endpoint by the wake thread when it is in blocking mode.
     pub fn getwaketime(&self) -> Timespec {
-        let i = self.i.lock().unwrap();
-
-        i.wakeupat
+        unsafe { (*(self.ui)).wakeupat }
     }
 
     pub fn getpeercount(&self) -> uint {
-        self.i.lock().unwrap().net.getepcount()
+        let i: &mut Internal = unsafe { transmute (self.ui) };
+        i.net.getepcount()
     }
 
     /// _(internal usage)_ Give the endpoint a message.
     pub fn give(&mut self, msg: &Message) -> bool {
+
         // Makes it ergonomic to bypass the mutex.
         let i: &mut Internal = unsafe { transmute(self.ui) };
 
@@ -332,7 +347,7 @@ impl Endpoint {
             return false;
         }
 
-        if i.limitmemory > 0 && i.memoryused >= i.limitmemory {
+        if i.limitmemory > 0 && i.memoryused.load(Ordering::SeqCst) >= i.limitmemory {
             return false;
         }
 
@@ -350,9 +365,11 @@ impl Endpoint {
         }
 
         i.messages.put(cloned);
-        i.memoryused += msg.cap();
-
+        //println!("after put");
+        i.memoryused.fetch_add(msg.cap(), Ordering::SeqCst);
+        //println!("after msg cap");
         self.wakeonewaiter();
+        //println!("returning");
         true
     }
 
@@ -364,7 +381,6 @@ impl Endpoint {
     /// this to show it is not sleeping therefore it may not be accurate._
     pub fn sleepercount(&self) -> uint {
         let i: &mut Internal = unsafe { transmute (self.ui) };
-
         i.slpcnt.load(Ordering::Relaxed)
     }
 
@@ -381,57 +397,59 @@ impl Endpoint {
     }
 
     /// Wake one thread waiting on this endpoint.
-    pub fn wakeonewaiter(&self) -> bool {
-        //let mut i = self.i.lock().unwrap();
+    pub fn wakeonewaiter(&self) {
+        // Really need this for performance.
         let i: &mut Internal = unsafe { transmute (self.ui) };
 
-        if !i.wakeinprogress {
-            i.cwaker.notify_all();
-            i.wakeinprogress = true;
-            true
-        } else {
-            false
-        }
+        //i.stoken.notify_all();
     }
 
     /// Sets the limit for pending messages in the queue.
     pub fn setlimitpending(&mut self, limit: uint) {
-        self.i.lock().unwrap().limitpending = limit;
+        let i: &mut Internal = unsafe { transmute (self.ui) };
+        i.limitpending = limit;
     }
 
     /// Sets the maximum amount of memory messages in the queue may consume.
     pub fn setlimitmemory(&mut self, limit: uint) {
-        self.i.lock().unwrap().limitmemory = limit;
+        let i: &mut Internal = unsafe { transmute (self.ui) };
+        i.limitmemory = limit;
     }
 
     /// Get the system/net identifier.
     pub fn getsid(&self) -> ID {
-        self.i.lock().unwrap().sid
+        let i: &mut Internal = unsafe { transmute (self.ui) };
+        i.sid
     }
 
     /// Get the endpoint identifier.
     pub fn geteid(&self) -> ID {
-        self.i.lock().unwrap().eid
+        let i: &mut Internal = unsafe { transmute (self.ui) };
+        i.eid
     }
 
     /// Get the group identifier (like the endpoint identifier).
     pub fn getgid(&self) -> ID {
-        self.i.lock().unwrap().gid
+        let i: &mut Internal = unsafe { transmute (self.ui) };
+        i.gid
     }
 
     /// Set the group identifier.
     pub fn setgid(&mut self, id: ID) {
-        self.i.lock().unwrap().gid = id;
+        let i: &mut Internal = unsafe { transmute (self.ui) };
+        i.gid = id;
     }
 
     /// Set the system/net identifier.
     pub fn setsid(&mut self, id: ID) {
-        self.i.lock().unwrap().sid = id;
+        let i: &mut Internal = unsafe { transmute (self.ui) };
+        i.sid = id;
     }
 
     /// Set the endpoint identifier.
     pub fn seteid(&mut self, id: ID) {
-        self.i.lock().unwrap().eid = id;
+        let i: &mut Internal = unsafe { transmute (self.ui) };
+        i.eid = id;
     }
 
 
@@ -439,9 +457,8 @@ impl Endpoint {
     ///
     /// _If sync type use `syncsync` or `sendsyncx`._
     pub fn sendx(&self, msg: Message) -> uint {
-        let i = self.i.lock().unwrap();
+        let i: &mut Internal = unsafe { transmute (self.ui) };
         let net = i.net.clone();
-        drop(i);
         net.send(msg)
     }
 
@@ -449,11 +466,13 @@ impl Endpoint {
     ///
     /// _If sync type use `sendsync` or `sendsyncx`._
     pub fn send(&self, msg: Message) -> uint {
-        let i = self.i.lock().unwrap();
-        let net = i.net.clone();
-        let sid = i.sid;
-        let eid = i.eid;
-        drop(i);
+        let i: &mut Internal = unsafe { transmute (self.ui) };
+        let net;
+        let sid;
+        let eid;
+        net = i.net.clone();
+        sid = i.sid;
+        eid = i.eid;
         net.sendas(msg, sid, eid)
     }
 
@@ -515,37 +534,39 @@ impl Endpoint {
     /// 
     /// See `Message` for API dealing with messages.
     pub fn recvorblock(&self, duration: Timespec) -> IoResult<Message> {
+        let ui: &mut Internal = unsafe { transmute(self.ui) };
+
         let mut when: Timespec = get_time();
         when = timespec::add(when, duration);
 
-        let mut i = self.i.lock().unwrap();
+        //i.wakeinprogress = false;
 
-        i.wakeinprogress = false;
-
-        while i.messages.len() < 1 {
+        while ui.messages.len() < 1 {
             // The wakeup thread will wake everyone up at or beyond
             // this specified time. Then anyone who needs to sleep
             // longer will go through this process again of setting
             // the time to the soonest needed wakeup.
-            if i.wakeupat > when {
-                i.wakeupat = when;
-            }
+            //if i.wakeupat > when {
+            //    i.wakeupat = when;
+            //}
 
             //println!("ep.id:{:p} sleeping", &*i);
-            i.slpcnt.fetch_add(1, Ordering::SeqCst);
-            i = i.cwaker.wait(unsafe { transmute_copy(&i) }).unwrap();
-            i.slpcnt.fetch_sub(1, Ordering::SeqCst);
+            //i.slpcnt.fetch_add(1, Ordering::SeqCst);
+            //let cwaker: &Condvar = unsafe { transmute(&i.cwaker) };
+            //println!("check {:p} with {:p}", cwaker, &i.cwaker);
+            //i = cwaker.wait(i).unwrap();
+            //Thread::yield_now();
+            //i.slpcnt.fetch_sub(1, Ordering::SeqCst);
             //println!("ep.id:{:p} woke", &*i);
-            i.wakeinprogress = false;
+            //i.wakeinprogress = false;
 
             let ctime: Timespec = get_time();
-
-            if ctime > when && i.messages.len() < 1 {
+            if ctime > when && ui.messages.len() < 1 {
                 //println!("{:p} NO MESSAGES", &*i);
                 // BugFix: Allow any other sleeping threads which will
                 // wake once we unlock this mutex to set their
                 // wake time. 
-                i.neverwakeme();
+                ui.neverwakeme();
                 return IoResult::Err(IoError { code: IoErrorCode::TimedOut });
             }
         }
@@ -555,12 +576,14 @@ impl Endpoint {
         // if it is sooner than this or any value set after
         // this. Any other threads will wake as soon as `i`
         // which is the mutex guard gets dropped.
-        i.neverwakeme();
-        i.recv()
+        ui.neverwakeme();
+
+        ui.recv()
     }
     
     /// Recieve a message with out blocking and return an error condition if none.
     pub fn recv(&self) -> IoResult<Message> {
-        self.i.lock().unwrap().recv()
+        let ui: &mut Internal = unsafe { transmute(self.ui) };
+        ui.recv()
     }
 }

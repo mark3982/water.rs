@@ -12,8 +12,8 @@ use water::Message;
 use std::thread::JoinGuard;
 use std::thread::Thread;
 use time::Timespec;
-//use std::io::timer::sleep;
-//use std::time::duration::Duration;
+use std::io::timer::sleep;
+use std::time::duration::Duration;
 
 // A safe structure is one that has no pointers and uses only primitive
 // types or types that are known to have primitive fields such as static
@@ -45,8 +45,6 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     // Wait until the other endpoints are ready.
     while net.getepcount() < THREADCNT + 1 { }
 
-    //sleep(Duration::seconds(1));
-
     let limit = 1u;
 
     let mut sentmsgcnt: uint = 0u;
@@ -58,9 +56,17 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     // once it is passed to the I/O sub-system in water it is 
     // duplication to prevent you from changing a packet before it
     // gets completely sent.
-    let mut msgtosend = Message::new_raw(32);
+    let mut msgtosend = Message::new_raw(64);
     msgtosend.dstsid = 0;
     msgtosend.dsteid = 0;
+
+    let mut got: Vec<Vec<u8>> = Vec::new();
+    for i in range(0u, THREADCNT) {
+        got.push(Vec::new());
+        for _ in range(0u, limit) {
+            got[i].push(0u8);
+        }
+    }
 
     while recvmsgcnt < limit * (THREADCNT - 1) || sentmsgcnt < limit {
         // Read anything we can.
@@ -76,12 +82,16 @@ fn funnyworker(mut net: Net, dbgid: uint) {
 
             //println!("thread[{}] reading struct", dbgid);
             let safestruct: SafeStructure = result.ok().get_raw().readstruct(0);
-            if safestruct.b != 0x10 {
+            if safestruct.c != 0x10 {
+                if got[safestruct.a as uint][safestruct.b as uint] != 0u8 {
+                    panic!("got {} twice from thread {}", safestruct.b, safestruct.a);
+                }
+                got[safestruct.a as uint][safestruct.b as uint] = 1u8;
+
                 recvmsgcnt += 1;
                 //if dbgid == 2 {
                 //println!("@@thread[{}] got {}/{} messages", dbgid, recvmsgcnt, limit * (THREADCNT - 1));
                 //}
-                assert!(safestruct.b == 0x12345678u32);
                 assert!(safestruct.c == 0x12u8);
             }
             //println!("thread[{}] safestruct.b:{}", dbgid, safestruct.b);
@@ -92,7 +102,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
             //println!("thread[{}] sending message", dbgid);
             let safestruct = SafeStructure {
                 a:  dbgid as u64,
-                b:  0x12345678,
+                b:  sentmsgcnt as u32,
                 c:  0x12,
             };
             //println!("thread sending something");
@@ -111,13 +121,13 @@ fn funnyworker(mut net: Net, dbgid: uint) {
 
     let safestruct = SafeStructure {
         a:  dbgid as u64,
-        b:  0x10,
+        b:  0x00,
         c:  0x10,
     };
     msgtosend.get_rawmutref().writestructref(0, &safestruct);
     ep.send(msgtosend);
 
-    //println!("thread[{}]: exiting (sent buffer {})", dbgid, msgtosend.get_rawref().id());
+    println!("thread[{}]: exiting", dbgid);
     //loop { }
 }
 
@@ -187,6 +197,7 @@ fn _basicio() {
 
     loop {
         let result = ep.recvorblock(Timespec { sec: sectowait, nsec: 0 });
+        //let result = ep.recvorblockforever();
 
         // It seems we need to wait just a bit I suppose for the threads
         // to actually get a message sent. Then after that we can read quite
@@ -202,7 +213,7 @@ fn _basicio() {
 
         //println!("main: got message {}:{}:{}", safestruct.a, safestruct.b, safestruct.c);
 
-        if safestruct.b == 0x10 {
+        if safestruct.c == 0x10 {
             if threadterm[safestruct.a as uint] != 0 {
                 panic!("got termination message from same thread twice!");
             }
@@ -214,6 +225,7 @@ fn _basicio() {
                 break;
             }
         }
+        println!("got msg");
     }
     //println!("done");
 }

@@ -140,11 +140,10 @@ impl<T> Queue<T> {
             // everything after the lst can be released, therefore let us release
             // them. This may be called a lot if only one item is left and it is
             // set as the `lst`.
-            //if  self.rinside.load(Ordering::SeqCst) == 1 && 
-            //    (*cur).needrel.load(Ordering::SeqCst) &&
-            //    self.len.load(Ordering::SeqCst) > 10
+            if  self.rinside.load(Ordering::SeqCst) == 1 && 
+                (*cur).needrel.load(Ordering::SeqCst)
             {
-                //self.taildealloc(cur);
+                self.taildealloc(cur);
             }
 
             // If the lst needs a release

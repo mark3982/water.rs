@@ -33,10 +33,12 @@ fn pingpong_mpsc_water(b: &mut Bencher) {
     let start = get_time();
     pingpong_mpsc_water_run(4, 1000);
     let end = get_time();
-    let dur = sub(end, start);
+    let dur = end - start;
+
+    //println!("dur:{}", dur);
 
     h.iterations = 1000;
-    h.dur = Duration::nanoseconds(dur.sec * NSINSEC + dur.nsec as i64);
+    h.dur = dur;
     h.bytes = 0;
 }
 
@@ -47,10 +49,10 @@ fn pingpong_mpsc_native(b: &mut Bencher) {
     let start = get_time();
     pingpong_mpsc_native_run(4, 1000);
     let end = get_time();
-    let dur = sub(end, start);
+    let dur = end - start;
 
     h.iterations = 1000;
-    h.dur = Duration::nanoseconds(dur.sec * NSINSEC + dur.nsec as i64);
+    h.dur = dur;
     h.bytes = 0;
 }
 

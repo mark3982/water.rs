@@ -18,44 +18,51 @@ use std::mem;
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
-#[bench]
-fn queuefight_water1x1(b: &mut Bencher) { b.iter(|| queuefight_water_run(1, 1, 100)); }
-#[bench]
-fn queuefight_water2x1(b: &mut Bencher) { b.iter(|| queuefight_water_run(2, 1, 100)); }
-#[bench]
-fn queuefight_water3x1(b: &mut Bencher) { b.iter(|| queuefight_water_run(3, 1, 100)); }
-#[bench]
-fn queuefight_water4x1(b: &mut Bencher) { b.iter(|| queuefight_water_run(4, 1, 100)); }
-#[bench]
-fn queuefight_water1x2(b: &mut Bencher) { b.iter(|| queuefight_water_run(1, 2, 100)); }
-#[bench]
-fn queuefight_water2x2(b: &mut Bencher) { b.iter(|| queuefight_water_run(2, 2, 100)); }
-#[bench]
-fn queuefight_water3x2(b: &mut Bencher) { b.iter(|| queuefight_water_run(3, 2, 100)); }
-#[bench]
-fn queuefight_water4x2(b: &mut Bencher) { b.iter(|| queuefight_water_run(4, 2, 100)); }
-
+const COUNT: uint = 1000;
 
 #[bench]
-fn queuefight_native1x1(b: &mut Bencher) { b.iter(|| queuefight_native_run(1, 1, 100)); }
+fn queuefight_water1x1(b: &mut Bencher) { b.iter(|| queuefight_water_run(1, 1, COUNT)); }
 #[bench]
-fn queuefight_native2x1(b: &mut Bencher) { b.iter(|| queuefight_native_run(2, 1, 100)); }
+fn queuefight_water2x1(b: &mut Bencher) { b.iter(|| queuefight_water_run(2, 1, COUNT)); }
 #[bench]
-fn queuefight_native3x1(b: &mut Bencher) { b.iter(|| queuefight_native_run(3, 1, 100)); }
+fn queuefight_water3x1(b: &mut Bencher) { b.iter(|| queuefight_water_run(3, 1, COUNT)); }
 #[bench]
-fn queuefight_native4x1(b: &mut Bencher) { b.iter(|| queuefight_native_run(4, 1, 100)); }
+fn queuefight_water4x1(b: &mut Bencher) { b.iter(|| queuefight_water_run(4, 1, COUNT)); }
+#[bench]
+fn queuefight_water10x1(b: &mut Bencher) { b.iter(|| queuefight_water_run(10, 1, COUNT)); }
+#[bench]
+fn queuefight_water10x10(b: &mut Bencher) { b.iter(|| queuefight_water_run(10, 10, COUNT)); }
+#[bench]
+fn queuefight_water1x2(b: &mut Bencher) { b.iter(|| queuefight_water_run(1, 2, COUNT)); }
+#[bench]
+fn queuefight_water2x2(b: &mut Bencher) { b.iter(|| queuefight_water_run(2, 2, COUNT)); }
+#[bench]
+fn queuefight_water3x2(b: &mut Bencher) { b.iter(|| queuefight_water_run(3, 2, COUNT)); }
+#[bench]
+fn queuefight_water4x2(b: &mut Bencher) { b.iter(|| queuefight_water_run(4, 2, COUNT)); }
+
+#[bench]
+fn queuefight_native1x1(b: &mut Bencher) { b.iter(|| queuefight_native_run(1, 1, COUNT)); }
+#[bench]
+fn queuefight_native2x1(b: &mut Bencher) { b.iter(|| queuefight_native_run(2, 1, COUNT)); }
+#[bench]
+fn queuefight_native3x1(b: &mut Bencher) { b.iter(|| queuefight_native_run(3, 1, COUNT)); }
+#[bench]
+fn queuefight_native4x1(b: &mut Bencher) { b.iter(|| queuefight_native_run(4, 1, COUNT)); }
+#[bench]
+fn queuefight_native10x1(b: &mut Bencher) { b.iter(|| queuefight_native_run(10, 1, COUNT)); }
 
 fn queuefight_water_run(txcnt: uint, rxcnt: uint, i: uint) {
-    let q: Arc<Queue<uint>> = Arc::new(Queue::new());
+    let q: Arc<Queue<u64>> = Arc::new(Queue::new());
     let mut threads: Vec<JoinGuard<()>> = Vec::new();
 
-    fn tx_thread(q: Arc<Queue<uint>>, txcnt: uint, rxcnt: uint, i: uint) {
-        for id in range(0u, i) {
-            q.put(id)
+    fn tx_thread(id: u64, q: Arc<Queue<u64>>, txcnt: uint, rxcnt: uint, i: uint) {
+        for num in range(0u, i) {
+            q.put(num as u64 | (id << 32));
         }
     }
 
-    fn rx_thread(q: Arc<Queue<uint>>, txcnt: uint, rxcnt: uint, i: uint) {
+    fn rx_thread(q: Arc<Queue<u64>>, txcnt: uint, rxcnt: uint, i: uint) {
         let need = (i * txcnt) / rxcnt;
         let mut got: uint = 0;
         while got < need {
@@ -63,34 +70,35 @@ fn queuefight_water_run(txcnt: uint, rxcnt: uint, i: uint) {
             if r.is_none() {
                 continue;
             }
-            //println!("{}", r.unwrap());
             got += 1;
         }
     }
 
-    for _ in range(0u, txcnt) {
+    for id in range(0u, txcnt) {
         let qc = q.clone();
-        threads.push(Thread::spawn(move || tx_thread(qc, txcnt, rxcnt, i)));
+        threads.push(Thread::spawn(move || tx_thread(id as u64, qc, txcnt, rxcnt, i)));
     }
 
     for _ in range(0u, rxcnt) {
         let qc = q.clone();
         threads.push(Thread::spawn(move || rx_thread(qc, txcnt, rxcnt, i)));
     }
+
+    drop(threads);
 }
 
 
 fn queuefight_native_run(txcnt: uint, rxcnt: uint, i: uint) {
-    let q: Arc<NativeQueue<uint>> = Arc::new(NativeQueue::new());
+    let q: Arc<NativeQueue<u64>> = Arc::new(NativeQueue::new());
     let mut threads: Vec<JoinGuard<()>> = Vec::new();
 
-    fn tx_thread(q: Arc<NativeQueue<uint>>, txcnt: uint, rxcnt: uint, i: uint) {
-        for id in range(0u, i) {
-            q.push(id)
+    fn tx_thread(id: u64, q: Arc<NativeQueue<u64>>, txcnt: uint, rxcnt: uint, i: uint) {
+        for num in range(0u, i) {
+            q.push(num as u64 | (id << 32));
         }
     }
 
-    fn rx_thread(q: Arc<NativeQueue<uint>>, txcnt: uint, rxcnt: uint, i: uint) {
+    fn rx_thread(q: Arc<NativeQueue<u64>>, txcnt: uint, rxcnt: uint, i: uint) {
         let need = (i * txcnt) / rxcnt;
         let mut got: uint = 0;
         while got < need {
@@ -101,9 +109,9 @@ fn queuefight_native_run(txcnt: uint, rxcnt: uint, i: uint) {
         }
     }
 
-    for _ in range(0u, txcnt) {
+    for id in range(0u, txcnt) {
         let qc = q.clone();
-        threads.push(Thread::spawn(move || tx_thread(qc, txcnt, rxcnt, i)));
+        threads.push(Thread::spawn(move || tx_thread(id as u64, qc, txcnt, rxcnt, i)));
     }
 
     for _ in range(0u, rxcnt) {

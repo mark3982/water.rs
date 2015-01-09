@@ -7,8 +7,79 @@ use std::mem::uninitialized;
 use std::mem::zeroed;
 use std::intrinsics::copy_memory;
 use std::rt::heap::deallocate;
+use std::rt::heap::allocate;
 use std::mem::size_of;
 use std::mem::align_of;
+
+struct PointerCache<T> {
+    block:      uint,
+    mask:       uint,
+    pos:     AtomicUint,
+}
+
+#[unsafe_destructor]
+impl<T> Drop for PointerCache<T> {
+    fn drop(&mut self) {
+        for pos in range(0u, self.mask + 1) {
+            // Will end up clearing/deallocating everything.
+            self.push(0 as *mut T);
+            // TODO: call destructor on each AtomicPtr<*mut T> item
+        }
+        unsafe { deallocate(self.block as *mut u8, size_of::<AtomicPtr<*mut T>>() * (self.mask + 1), align_of::<AtomicPtr<*mut T>>()); }
+    }
+}
+
+impl<T> PointerCache<T> {
+    pub fn new<T>(bsize: uint) -> PointerCache<T> {
+        let count = !(!0u << bsize) + 1;
+        let itc = PointerCache {
+            block:  unsafe { transmute(allocate(size_of::<AtomicPtr<T>>() * count, align_of::<AtomicPtr<T>>())) },
+            mask:   !(!0u << bsize),
+            pos:    AtomicUint::new(0),
+        };
+
+        for pos in range(0u, count) { 
+            itc.init(pos);
+        }
+
+        itc
+    }
+
+    fn init(&self, pos: uint) {
+        unsafe { *((self.block + size_of::<AtomicPtr<T>>() * pos) as *mut AtomicPtr<T>) = AtomicPtr::new(0 as *mut T); }
+    }
+
+    fn get(&self, pos: uint) -> &AtomicPtr<T> {
+        unsafe { transmute((self.block + size_of::<AtomicPtr<T>>() * pos) as *mut AtomicPtr<T>) }
+    }
+
+    pub fn pop(&self) -> Option<*mut T> {
+        let pos = (self.pos.fetch_sub(1, Ordering::Relaxed) - 1) & self.mask;
+
+        let old = self.get(pos).swap(0 as *mut T, Ordering::Relaxed);
+
+        if old != 0 as *mut T {
+            //println!("pop {} {:p}", pos, old);
+            Option::Some(old)
+        } else {
+            //println!("pop {} none", pos);
+            Option::None
+        }
+    }
+
+    pub fn push(&self, new: *mut T) {
+        let pos = self.pos.fetch_add(1, Ordering::Relaxed) & self.mask;
+
+        let old = self.get(pos).swap(new, Ordering::Relaxed);
+
+        if old != 0 as *mut T {
+            //println!("replaced {} {:p} over {:p}", pos, new, old);
+            //unsafe { deallocate(old as *mut u8, size_of::<T>(), align_of::<T>()); }
+        } else {
+            //println!("push {} {:p}", pos, new);
+        }
+    }
+}
 
 pub struct Queue<T> {
     ptr:        AtomicPtr<Item<T>>,
@@ -16,6 +87,9 @@ pub struct Queue<T> {
     rinside:    AtomicUint,
     len:        AtomicUint,
     sent:       AtomicUint,
+    needrel:    AtomicUint,
+    doingrel:   AtomicBool,
+    recycle:    PointerCache<Item<T>>,
 }
 
 struct Item<T> {
@@ -26,6 +100,13 @@ struct Item<T> {
     payload:    T,
 }
 
+#[unsafe_destructor]
+impl<T> Drop for Queue<T> {
+    fn drop(&mut self) {
+        self.forcedealloc();
+    }
+}
+
 impl<T> Queue<T> {
     pub fn new() -> Queue<T> {
         Queue {
@@ -34,41 +115,48 @@ impl<T> Queue<T> {
             rinside:    AtomicUint::new(0),
             len:        AtomicUint::new(0),
             sent:       AtomicUint::new(0),
+            needrel:    AtomicUint::new(0),
+            doingrel:   AtomicBool::new(false),
+            recycle:    PointerCache::<Item<T>>::new(10),
         }
     }
 
     pub fn put(&self, t: T) {
-        let item: *mut Item<T> = unsafe { transmute(box Item {
-            next:       AtomicPtr::new(0 as *mut Item<T>),
-            prev:       AtomicPtr::new(0 as *mut Item<T>),
-            claimed:    AtomicBool::new(true),
-            needrel:    AtomicBool::new(false),
-            payload:    t,
-        }) };
-
-        //println!("put enter");
-
-        let sndx = self.sent.fetch_add(1, Ordering::SeqCst);
-
-        loop {
-            let nxt = self.ptr.load(Ordering::SeqCst);
-            unsafe { (*item).next.store(nxt, Ordering::SeqCst) };
-            // protection from other sender(s)
-            if self.ptr.compare_and_swap(nxt, item, Ordering::SeqCst) == nxt {
-                if nxt as uint != 0 {
-                    unsafe { (*nxt).prev.store(item, Ordering::SeqCst); }
+        unsafe {
+            let item: *mut Item<T> = match self.recycle.pop() {
+                Option::Some(item) => {
+                    (*item).claimed.store(false, Ordering::Relaxed);
+                    (*item).needrel.store(false, Ordering::Relaxed);
+                    (*item).next.store(0 as *mut Item<T>, Ordering::Relaxed);
+                    (*item).prev.store(0 as *mut Item<T>, Ordering::Relaxed);
+                    copy_memory(&mut ((*item).payload), transmute(&t), 1);
+                    item
+                },
+                Option::None => {
+                    transmute(box Item {
+                        next:       AtomicPtr::new(0 as *mut Item<T>),
+                        prev:       AtomicPtr::new(0 as *mut Item<T>),
+                        claimed:    AtomicBool::new(false),
+                        needrel:    AtomicBool::new(false),
+                        payload:    t,
+                    })
                 }
-                // release protection from receiver(s) released
-                unsafe { (*item).claimed.store(false, Ordering::SeqCst); }
-                self.len.fetch_add(1, Ordering::SeqCst);
-                //self.lst.compare_and_swap(0 as *mut Item<T>, item, Ordering::SeqCst);
-                //println!("put item:{:p} stored and unclaimed nxt:{:p}", item, nxt);
-                break;
-            }
-            //println!("put retry");
-        }
+            };
 
-        //println!("put exit");
+            let sndx = self.sent.fetch_add(1, Ordering::SeqCst);
+
+            let oldhead = self.ptr.swap(item, Ordering::SeqCst);
+
+            (*item).next.store(oldhead, Ordering::SeqCst);
+
+            if oldhead != 0 as *mut Item<T> {
+                (*oldhead).prev.store(item, Ordering::SeqCst);
+            } else {
+                self.lst.store(item, Ordering::SeqCst);
+            }
+
+            self.len.fetch_add(1, Ordering::SeqCst);
+        }
     }
 
     pub fn len(&self) -> uint {
@@ -101,10 +189,31 @@ impl<T> Queue<T> {
             while cur != 0 as *mut Item<T> {
                 // Deallocate the memory consumed by this entry.
                 let ncur = (*cur).next.load(Ordering::SeqCst);
-                deallocate(cur as *mut u8, size_of::<Item<T>>(), align_of::<Item<T>>());
+                self.recycle.push(cur);
+                //deallocate(cur as *mut u8, size_of::<Item<T>>(), align_of::<Item<T>>());
                 cur = ncur;
             }
             (*after).next.store(0 as *mut Item<T>, Ordering::SeqCst);
+        }
+    }
+
+    fn forcedealloc(&self) {
+        let after = self.ptr.load(Ordering::SeqCst);
+        let mut cnt: uint = 0;
+        self.ptr.store(0 as *mut Item<T>, Ordering::SeqCst);
+        self.lst.store(0 as *mut Item<T>, Ordering::SeqCst);
+        unsafe {
+            let mut cur = (*after).next.load(Ordering::SeqCst);
+            while cur != 0 as *mut Item<T> {
+                // Deallocate the memory consumed by this entry.
+                let ncur = (*cur).next.load(Ordering::SeqCst);
+                //deallocate(cur as *mut u8, size_of::<Item<T>>(), align_of::<Item<T>>());
+                self.recycle.push(cur);
+                cur = ncur;
+                cnt += 1;
+            }
+            (*after).next.store(0 as *mut Item<T>, Ordering::SeqCst);
+            self.needrel.fetch_sub(cnt, Ordering::SeqCst);
         }
     }
 
@@ -115,39 +224,20 @@ impl<T> Queue<T> {
             let rinside = self.rinside.fetch_add(1, Ordering::SeqCst);
             let mut cur: *mut Item<T> = self.lst.load(Ordering::SeqCst);
             if cur == 0 as *mut Item<T> {
-                let mut ptr: *mut Item<T> = self.ptr.load(Ordering::SeqCst);
-                if ptr != 0 as *mut Item<T> {
-                    // Find the tail.
-                    while (*ptr).next.load(Ordering::SeqCst) != 0 as *mut Item<T> {
-                        ptr = (*ptr).next.load(Ordering::SeqCst);
-                    }
-                    // We could have a fight so only the first will succeed, and on top of
-                    // that if there is a fight both should have the same tail. New items
-                    // are only added to the beginning not the end.
-                    //
-                    // _This could be a normal store instead of cmp_and_swap? ..._
-                    self.lst.compare_and_swap(0 as *mut Item<T>, ptr, Ordering::SeqCst);
-                    cur = ptr;
-                    // Now, continue onward. If we were not first we will still continue
-                    // along and fight later below if it happens.
-                } else {
-                    //println!("none"); self.dbg();
-                    self.rinside.fetch_sub(1, Ordering::SeqCst);
-                    return Option::None;
-                }
-            }        
-            // If the lst says it needs release, then we can safely assume that
-            // everything after the lst can be released, therefore let us release
-            // them. This may be called a lot if only one item is left and it is
-            // set as the `lst`.
-            //
-            // Also, allow only freeing after so many have built up in hopes of
-            // increasing cache effectiveness.
+                return Option::None;
+            }
+
+            
             if  self.rinside.load(Ordering::SeqCst) == 1 && 
+                //self.needrel.load(Ordering::Relaxed) > 200 &&
                 (*cur).needrel.load(Ordering::SeqCst)
             { 
-                self.taildealloc(cur);
+                if !self.doingrel.compare_and_swap(false, true, Ordering::SeqCst) {
+                    self.taildealloc(cur);
+                    self.doingrel.store(false, Ordering::SeqCst);
+                }
             }
+            
 
             // If the lst needs a release
             if (*cur).needrel.load(Ordering::SeqCst) {
@@ -159,14 +249,13 @@ impl<T> Queue<T> {
                 if nlst != 0 as *mut Item<T> {
                     self.lst.compare_and_swap(cur, nlst, Ordering::SeqCst);
                 }
+                cur = nlst;
             }
+
             // Follow the list backwards trying to claim an item.
             while cur != 0 as *mut Item<T> {
-                //            
-                //println!("recv cur:{:p}", cur);
                 if !(*cur).claimed.compare_and_swap(false, true, Ordering::SeqCst) {
                     self.len.fetch_sub(1, Ordering::Relaxed);
-                    // Are we dealing with the last one?
                     if first {
                         // We want to move the last pointer to the previous, but only
                         // if the previous is not zero.
@@ -175,21 +264,16 @@ impl<T> Queue<T> {
                         let nlst = (*cur).prev.load(Ordering::SeqCst);
                         if nlst != 0 as *mut Item<T> {
                             self.lst.compare_and_swap(cur, nlst, Ordering::SeqCst);
-                        }
-                    } else {
-                        //println!("recv limbo no go");
+                        } 
                     }
-                    // Move payload out, but unsafely since we leave nothing in it's place.
                     let payload: T = uninitialized();
                     copy_memory(transmute(&payload), &mut ((*cur).payload), 1);
-                    // Set that we are done using it.
                     (*cur).needrel.store(true, Ordering::SeqCst);
+                    self.needrel.fetch_add(1, Ordering::SeqCst);
                     self.rinside.fetch_sub(1, Ordering::SeqCst);
-                    //println!("recv one"); self.dbg();
+                    //println!("recv one");
                     return Option::Some(payload);
                 }
-                //println!("recv iter");
-                // 
                 first = false;
                 cur = (*cur).prev.load(Ordering::SeqCst);
             }

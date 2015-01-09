@@ -45,6 +45,8 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     // Wait until the other endpoints are ready.
     while net.getepcount() < THREADCNT + 1 { }
 
+    sleep(Duration::Seconds(1));
+
     let limit = 1u;
 
     let mut sentmsgcnt: uint = 0u;

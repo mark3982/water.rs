@@ -64,7 +64,6 @@ struct Internal {
 /// crate._
 pub struct Net {
     i:      Arc<Mutex<Internal>>,
-    ui:     *mut Internal,
     sid:    ID,
 }
 
@@ -73,7 +72,6 @@ impl Clone for Net {
         Net {
             i:      self.i.clone(),
             sid:    self.sid,
-            ui:     self.ui,
         }
     }
 }
@@ -156,15 +154,12 @@ impl Net {
                 endpoints:      Vec::new(),
                 hueid:          0x10000,
             })),
-            ui:     0 as *mut Internal,
             sid:    sid,
         };
 
-        // Allow ergonomic unprotected access.
-        net.ui = unsafe { transmute(&*net.i.lock().unwrap()) };
-
         // Spawn a helper thread which provides the ability
         // for threads to wait for messages and have a timeout. 
+        // TODO: uncomment this
         //let netclone = net.clone();
         //Thread::spawn(move || { Net::sleeperthread(netclone) }).detach();
 
@@ -221,10 +216,10 @@ impl Net {
         // on endpoints since we are not locking and as long as
         // it is sync this is okay, but I do need to force the
         // reference to a mutable one.
-        let i: &Internal = unsafe { transmute(self.ui) };
-        for ep in i.endpoints.iter() {
-            let _ep: &mut Endpoint = unsafe { transmute(ep) };
-            if _ep.give(&msg) {
+        let mut local = self.i.lock().unwrap().endpoints.clone();
+
+        for ep in local.iter_mut() {
+            if ep.give(&msg) {
                 ocnt += 1;
             }
         }
@@ -243,7 +238,7 @@ impl Net {
     ///      let ep = net.new_endpoint_withid(id);                   // SAME
     ///      let ep = net.new_endpoint();                            // SAME
     ///
-    pub fn get_neweid(&mut self) -> ID {
+    pub fn get_neweid(&self) -> ID {
         let mut i = self.i.lock().unwrap();
         let eid = i.hueid;
         i.hueid += 1;
@@ -256,7 +251,7 @@ impl Net {
     ///      let mut net = Net::new(100);
     ///      let id = net.get_neweid();
     ///      let ep = net.new_endpoint_withid(id);     // SAME
-    pub fn new_endpoint_withid(&mut self, eid: ID) -> Endpoint {
+    pub fn new_endpoint_withid(&self, eid: ID) -> Endpoint {
         let mut i = self.i.lock().unwrap();
 
         if eid > i.hueid {
@@ -271,12 +266,12 @@ impl Net {
     }
 
     /// Not recommend for usage.
-    pub fn add_endpoint(&mut self, ep: Endpoint) {
+    pub fn add_endpoint(&self, ep: Endpoint) {
         self.i.lock().unwrap().endpoints.push(ep);
     }
 
     /// Not recommened for usage.
-    pub fn drop_endpoint(&mut self, thisep: &Endpoint) {
+    pub fn drop_endpoint(&self, thisep: &Endpoint) {
         let mut lock = self.i.lock().unwrap();
         let endpoints = &mut lock.endpoints;
 
@@ -292,7 +287,7 @@ impl Net {
     }
 
     /// Return a new endpoint with an automatically assigned unique ID.
-    pub fn new_endpoint(&mut self) -> Endpoint {
+    pub fn new_endpoint(&self) -> Endpoint {
         let mut i = self.i.lock().unwrap();
 
         let ep = Endpoint::new(self.sid, i.hueid, self.clone());

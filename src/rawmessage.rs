@@ -26,7 +26,7 @@ unsafe impl Send for Internal{}
 
 impl Drop for Internal {
     fn drop(&mut self) {
-        //unsafe { deallocate(self.buf, self.cap, size_of::<uint>()); }
+        unsafe { deallocate(self.buf, self.cap, size_of::<uint>()); }
     }
 }
 
@@ -56,7 +56,7 @@ impl Internal {
         };
 
         unsafe { 
-            copy_memory(i.buf, self.buf, self.cap); 
+            copy_memory::<u8>(i.buf, self.buf, self.cap); 
         }
 
         i
@@ -81,6 +81,7 @@ impl Internal {
             }
 
             deallocate(self.buf, self.cap, size_of::<uint>());
+            self.buf = nbuf;
 
             self.cap = newcap;
 
@@ -114,13 +115,16 @@ impl RawMessage {
 
     /// Duplicate the raw message creating a new one not sharing the buffer.
     pub fn dup(&self) -> RawMessage {
-        RawMessage {i:  Arc::new(Mutex::new(self.i.lock().unwrap().dup()))}
+        let rm = RawMessage {i:  Arc::new(Mutex::new(self.i.lock().unwrap().dup()))};
+
+        rm
     }
 
     /// Create a raw message from a &str type.
     ///
     /// `let rmsg = RawMessage:new_fromstr("Hello World");`
     pub fn new_fromstr(s: &str) -> RawMessage {
+        panic!("debug-stopped");
         let m = RawMessage::new(s.len());
         unsafe {
             copy_memory(m.i.lock().unwrap().buf, *(transmute::<&&str, *const uint>(&s)) as *const u8, s.len());
@@ -130,13 +134,44 @@ impl RawMessage {
 
     /// Get the capacity.
     pub fn cap(&self) -> uint {
-        self.i.lock().unwrap().cap
+        unsafe {
+            let m: &Mutex<Internal> = &*self.i;
+            let ptr: *mut uint = transmute(&*self.i);
+            let ptr: uint = *ptr;
+            *((ptr + 8 * 2) as *mut uint) = 0;
+            std::io::stdio::stdout_raw().write(
+            format!("@trying to lock\nlock:{:x}\ncount:{:x}\nowner:{:x}\nnusers:{:x}\n",
+                *((ptr + 4 * 0) as *mut u32),
+                *((ptr + 4 * 1) as *mut u32),
+                *((ptr + 4 * 2) as *mut u32),
+                *((ptr + 4 * 3) as *mut u32),
+            ).as_bytes());
+        }
+        let i = self.i.lock().unwrap();
+        unsafe {
+            let m: &Mutex<Internal> = &*self.i;
+            let ptr: *mut uint = transmute(&*self.i);
+            let ptr: uint = *ptr;
+            std::io::stdio::stdout_raw().write(
+            format!("@locked\nlock:{:x}\ncount:{:x}\nowner:{:x}\nnusers:{:x}\n",
+                *((ptr + 4 * 0) as *mut u32),
+                *((ptr + 4 * 1) as *mut u32),
+                *((ptr + 4 * 2) as *mut u32),
+                *((ptr + 4 * 3) as *mut u32),
+            ).as_bytes());
+        }        
+        println!("@{:p}", &*i);
+        let cap = i.cap;
+        drop(i);
+        println!("got cap");
+        return cap;
     }
 
     /// Set the length.
     ///
     /// The length must not exceed the capacity or it will panic.
     pub fn setlen(&mut self, len: uint) {
+        panic!("debug-stopped");
         self.i.lock().unwrap().setlen(len);
     }
 
@@ -160,6 +195,8 @@ impl RawMessage {
     /// Write into the buffer from a byte slice.
     pub fn write_from_slice(&mut self, mut offset: uint, f: &[u8]) {
         let mut i = self.i.lock().unwrap();
+
+        panic!("debug-stopped");
 
         if offset + f.len() > i.cap {
             panic!("write past end of buffer");
@@ -198,10 +235,10 @@ impl RawMessage {
         let i = self.i.lock().unwrap();
 
         if offset + size_of::<T>() > i.cap {
-            panic!("write past end of buffer!")
+            panic!("write past end of buffer! {}:{}", offset + size_of::<T>(), i.cap);
         }
 
-        unsafe { copy_memory((i.buf as uint + offset) as *mut T, transmute(t), 1); }        
+        unsafe { copy_memory::<T>((i.buf as uint + offset) as *mut T, transmute(t), 1); }        
     }
 
     /// Safely write a structure/value by consuming it.

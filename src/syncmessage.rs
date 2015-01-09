@@ -74,8 +74,10 @@ impl SyncMessage {
             // Prevent anyone else from taking this message.
             *lock = false;
             // Let the caller know we succeeded.
+            drop(lock);
             true
         } else {
+            drop(lock);
             // Let the caller know we failed.
             false
         }

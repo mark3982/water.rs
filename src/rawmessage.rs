@@ -48,6 +48,10 @@ impl Internal {
         }
     }
 
+    fn id(&self) -> uint {
+        unsafe { transmute(self) }
+    }
+
     fn dup(&self) -> Internal {
         let i = Internal {
             len:        self.cap,
@@ -115,16 +119,19 @@ impl RawMessage {
 
     /// Duplicate the raw message creating a new one not sharing the buffer.
     pub fn dup(&self) -> RawMessage {
-        let rm = RawMessage {i:  Arc::new(Mutex::new(self.i.lock().unwrap().dup()))};
-
+        let i = self.i.lock().unwrap().dup();
+        let rm = RawMessage {i:  Arc::new(Mutex::new(i))};
         rm
+    }
+
+    pub fn id(&self) -> uint {
+        unsafe { transmute(self) }
     }
 
     /// Create a raw message from a &str type.
     ///
     /// `let rmsg = RawMessage:new_fromstr("Hello World");`
     pub fn new_fromstr(s: &str) -> RawMessage {
-        panic!("debug-stopped");
         let m = RawMessage::new(s.len());
         unsafe {
             copy_memory(m.i.lock().unwrap().buf, *(transmute::<&&str, *const uint>(&s)) as *const u8, s.len());
@@ -134,7 +141,7 @@ impl RawMessage {
 
     /// Get the capacity.
     pub fn cap(&self) -> uint {
-        unsafe {
+        /*unsafe {
             let m: &Mutex<Internal> = &*self.i;
             let ptr: *mut uint = transmute(&*self.i);
             let ptr: uint = *ptr;
@@ -146,9 +153,9 @@ impl RawMessage {
                 *((ptr + 4 * 2) as *mut u32),
                 *((ptr + 4 * 3) as *mut u32),
             ).as_bytes());
-        }
+        }*/
         let i = self.i.lock().unwrap();
-        unsafe {
+        /*unsafe {
             let m: &Mutex<Internal> = &*self.i;
             let ptr: *mut uint = transmute(&*self.i);
             let ptr: uint = *ptr;
@@ -159,11 +166,11 @@ impl RawMessage {
                 *((ptr + 4 * 2) as *mut u32),
                 *((ptr + 4 * 3) as *mut u32),
             ).as_bytes());
-        }        
-        println!("@{:p}", &*i);
+        } */       
+        //println!("@{:p}", &*i);
         let cap = i.cap;
         drop(i);
-        println!("got cap");
+        //println!("got cap");
         return cap;
     }
 
@@ -171,20 +178,12 @@ impl RawMessage {
     ///
     /// The length must not exceed the capacity or it will panic.
     pub fn setlen(&mut self, len: uint) {
-        panic!("debug-stopped");
         self.i.lock().unwrap().setlen(len);
     }
 
     /// Get the length.
     pub fn len(&self) -> uint {
         self.i.lock().unwrap().len
-    }
-
-    /// Get unique ID for this message for this process.
-    ///
-    /// The unique ID will differ across process boundaries.
-    pub fn id(&self) -> uint {
-        self.i.lock().unwrap().buf as uint
     }
 
     /// Resize the capacity of the message keeping the old contents or truncating them.
@@ -195,8 +194,6 @@ impl RawMessage {
     /// Write into the buffer from a byte slice.
     pub fn write_from_slice(&mut self, mut offset: uint, f: &[u8]) {
         let mut i = self.i.lock().unwrap();
-
-        panic!("debug-stopped");
 
         if offset + f.len() > i.cap {
             panic!("write past end of buffer");

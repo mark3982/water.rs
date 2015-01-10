@@ -56,6 +56,7 @@ pub use time::get_time;
 pub use time::Timespec;
 ///
 pub use queue::Queue;
+pub use queue::SafeQueue;
 
 /// Provides some utility functions for a `Timespec`.
 pub mod timespec;

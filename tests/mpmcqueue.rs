@@ -18,7 +18,7 @@ use std::cell::UnsafeCell;
 use std::thread::Thread;
 use std::time::duration::Duration;
 
-#[test]
+//#[test]
 fn mpscqueue() {
     let start = get_time();
     Thread::spawn(|| mpscqueue_run(100, 1000) );

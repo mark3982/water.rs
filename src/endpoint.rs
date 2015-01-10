@@ -24,6 +24,7 @@ use std::mem::transmute_copy;
 use std::thread::Thread;
 
 use Queue;
+use SafeQueue;
 
 use time::Timespec;
 use time::get_time;
@@ -127,7 +128,7 @@ struct AddressData {
 
 struct Internal {
     stoken:         SleepToken,
-    messages:       Queue<Message>,
+    messages:       SafeQueue<Message>,
     wakeupat:       Mutex<Timespec>,
     memoryused:     AtomicUint,
     net:            Net,
@@ -239,7 +240,6 @@ impl Internal {
             }
 
             let msg = result.unwrap(); 
-            println!("dup_ifok()");
             let msg = msg.dup_ifok();
             let sz = msg.cap();
             self.memoryused.fetch_sub(sz, Ordering::SeqCst);
@@ -273,7 +273,7 @@ impl Endpoint {
     pub fn new(sid: u64, eid: u64, net: Net) -> Endpoint {
         Endpoint {
             i:  Arc::new(Internal {
-                messages:       Queue::new(),
+                messages:       SafeQueue::new(),
                 stoken:         SleepToken::new(),
                 wakeupat:       Mutex::new(Timespec { nsec: 0i32, sec: 0x7fffffffffffffffi64 }),
                 limitpending:   AtomicUint::new(0),

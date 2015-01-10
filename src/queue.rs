@@ -2,6 +2,7 @@ use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUint;
+use std::sync::Mutex;
 use std::mem::transmute;
 use std::mem::uninitialized;
 use std::mem::zeroed;
@@ -10,6 +11,7 @@ use std::rt::heap::deallocate;
 use std::rt::heap::allocate;
 use std::mem::size_of;
 use std::mem::align_of;
+use std::vec::Vec;
 
 struct PointerCache<T> {
     block:      uint,
@@ -74,7 +76,7 @@ impl<T> PointerCache<T> {
 
         if old != 0 as *mut T {
             //println!("replaced {} {:p} over {:p}", pos, new, old);
-            //unsafe { deallocate(old as *mut u8, size_of::<T>(), align_of::<T>()); }
+            unsafe { deallocate(old as *mut u8, size_of::<T>(), align_of::<T>()); }
         } else {
             //println!("push {} {:p}", pos, new);
         }
@@ -104,6 +106,35 @@ struct Item<T> {
 impl<T> Drop for Queue<T> {
     fn drop(&mut self) {
         self.forcedealloc();
+    }
+}
+
+pub struct SafeQueue<T> {
+    vec:    Mutex<Vec<T>>,
+}
+
+impl<T: Send> SafeQueue<T> {
+    pub fn new() -> SafeQueue<T> {
+        SafeQueue {
+            vec:        Mutex::new(Vec::new()),
+        }
+    }
+
+    pub fn put(&self, t: T) {
+        self.vec.lock().unwrap().push(t)
+    }
+
+    pub fn get(&self) -> Option<T> {
+        let mut lock = self.vec.lock().unwrap();
+        if lock.len() < 1 {
+            Option::None
+        } else {
+            Option::Some(lock.remove(0))
+        }
+    }
+
+    pub fn len(&self) -> uint {
+        self.vec.lock().unwrap().len()
     }
 }
 

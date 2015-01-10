@@ -17,6 +17,7 @@ use water::timespec::NSINSEC;
 
 use water::Net;
 use std::thread::Thread;
+use std::io::timer::sleep;
 use std::time::duration::Duration;
 
 const BIGSIZE: uint = 1024;

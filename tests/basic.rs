@@ -45,7 +45,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     // Wait until the other endpoints are ready.
     while net.getepcount() < THREADCNT + 1 { }
 
-    sleep(Duration::Seconds(1));
+    //sleep(Duration::Seconds(1));
 
     let limit = 1u;
 
@@ -94,7 +94,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
                 //if dbgid == 2 {
                 //println!("@@thread[{}] got {}/{} messages", dbgid, recvmsgcnt, limit * (THREADCNT - 1));
                 //}
-                assert!(safestruct.c == 0x12u8);
+                //assert!(safestruct.c == 0x12u8);
             }
             //println!("thread[{}] safestruct.b:{}", dbgid, safestruct.b);
         }
@@ -130,7 +130,6 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     ep.send(msgtosend);
 
     println!("thread[{}]: exiting", dbgid);
-    //loop { }
 }
 
 #[test]

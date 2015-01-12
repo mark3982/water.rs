@@ -52,7 +52,7 @@ impl SyncMessage {
     /// from having to use traits which would complicate the code (I believed at
     /// this time at least) I used this method.
     #[inline]
-    pub fn internal_clone(&self, key: uint) -> SyncMessage {
+    pub fn internal_clone(&self, key: usize) -> SyncMessage {
         if key != 0x879 {
             panic!("You used an internal function. They key is 0x879.")
         }        

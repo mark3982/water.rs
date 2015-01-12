@@ -70,9 +70,9 @@ pub fn thread_rx(mut which: Which<TcpBridgeListener, TcpBridgeConnector>, mut ep
         msgsize -= 1 + 8 * 4;
 
         // Read the actual raw message part of the message.
-        let mut vbuf: Vec<u8> = Vec::with_capacity(msgsize as uint);
-        unsafe { vbuf.set_len(msgsize as uint) };
-        stream.read_at_least(msgsize as uint, vbuf.as_mut_slice());
+        let mut vbuf: Vec<u8> = Vec::with_capacity(msgsize as usize);
+        unsafe { vbuf.set_len(msgsize as usize) };
+        stream.read_at_least(msgsize as usize, vbuf.as_mut_slice());
 
         // We currently only support raw messages at the moment, since
         // there is no way possible at this time to support sync or clone
@@ -83,7 +83,7 @@ pub fn thread_rx(mut which: Which<TcpBridgeListener, TcpBridgeConnector>, mut ep
         }
 
         // Create a raw message.
-        let mut rmsg = RawMessage::new(msgsize as uint);
+        let mut rmsg = RawMessage::new(msgsize as usize);
         rmsg.write_from_slice(0, vbuf.as_slice());
 
         // Create the actual message, and transfer the source and

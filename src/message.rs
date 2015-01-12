@@ -92,7 +92,7 @@ impl Clone for Message {
 impl Message {
     /// Returns the total capacity of the message. Also known as the total size of the 
     /// message buffer which will contain raw byte data.
-    pub fn cap(&self) -> uint {
+    pub fn cap(&self) -> usize {
         match self.payload {
             MessagePayload::Raw(ref msg) => msg.cap(),
             MessagePayload::Sync(ref msg) => msg.payload.cap(),
@@ -109,7 +109,7 @@ impl Message {
     /// unable to make a method only visible to my crate across modules. To keep
     /// from having to use traits which would complicate the code (I believed at
     /// this time at least) I used this method.     
-    pub fn internal_clone(&self, key: uint) -> Message {
+    pub fn internal_clone(&self, key: usize) -> Message {
         if key != 0x879 {
             panic!("You used an internal function. They key is 0x879.")
         }
@@ -342,7 +342,7 @@ impl Message {
     }
 
     /// Helper function for creating a raw message with capacity specified.
-    pub fn new_raw(cap: uint) -> Message {
+    pub fn new_raw(cap: usize) -> Message {
         Message {
             canloop: false,
             srcsid: 0, srceid: 0,

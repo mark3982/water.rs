@@ -112,11 +112,11 @@ impl TcpBridgeConnector {
             let _ep = ep.clone();
             let _stream = stream.clone();
             let _bridge = bridge.clone();
-            let rxthread = Thread::spawn(move || { thread_rx(Which::Connector(_bridge), _ep, _stream); });
+            let rxthread = Thread::scoped(move || { thread_rx(Which::Connector(_bridge), _ep, _stream); });
             let _ep = ep.clone();
             let _sid = bridge.i.lock().unwrap().net.getserveraddr();
             let _bridge = bridge.clone();
-            let txthread = Thread::spawn(move || { thread_tx(Which::Connector(_bridge), _ep, stream, _sid); });
+            let txthread = Thread::scoped(move || { thread_tx(Which::Connector(_bridge), _ep, stream, _sid); });
 
             // Set endpoint into bridge.
             bridge.i.lock().unwrap().ep = Option::Some(ep);
@@ -148,8 +148,7 @@ impl TcpBridgeConnector {
         }))};
 
         let nclone = n.clone();
-        let mainthread = Thread::spawn(move || { TcpBridgeConnector::thread(nclone)});
-        mainthread.detach();
+        Thread::spawn(move || { TcpBridgeConnector::thread(nclone)});
 
         n
     }

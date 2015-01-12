@@ -12,17 +12,19 @@ use std::rt::heap::allocate;
 use std::mem::size_of;
 use std::mem::align_of;
 use std::vec::Vec;
+use std::ptr::zero_memory;
+use std::mem::forget;
 
 struct PointerCache<T> {
-    block:      uint,
-    mask:       uint,
+    block:      usize,
+    mask:       usize,
     pos:     AtomicUint,
 }
 
 #[unsafe_destructor]
 impl<T> Drop for PointerCache<T> {
     fn drop(&mut self) {
-        for pos in range(0u, self.mask + 1) {
+        for pos in range(0us, self.mask + 1) {
             // Will end up clearing/deallocating everything.
             self.push(0 as *mut T);
             // TODO: call destructor on each AtomicPtr<*mut T> item
@@ -32,26 +34,26 @@ impl<T> Drop for PointerCache<T> {
 }
 
 impl<T> PointerCache<T> {
-    pub fn new<T>(bsize: uint) -> PointerCache<T> {
-        let count = !(!0u << bsize) + 1;
+    pub fn new(bsize: usize) -> PointerCache<T> {
+        let count = !(!0us << bsize) + 1;
         let itc = PointerCache {
             block:  unsafe { transmute(allocate(size_of::<AtomicPtr<T>>() * count, align_of::<AtomicPtr<T>>())) },
-            mask:   !(!0u << bsize),
+            mask:   !(!0us << bsize),
             pos:    AtomicUint::new(0),
         };
 
-        for pos in range(0u, count) { 
+        for pos in range(0us, count) { 
             itc.init(pos);
         }
 
         itc
     }
 
-    fn init(&self, pos: uint) {
+    fn init(&self, pos: usize) {
         unsafe { *((self.block + size_of::<AtomicPtr<T>>() * pos) as *mut AtomicPtr<T>) = AtomicPtr::new(0 as *mut T); }
     }
 
-    fn get(&self, pos: uint) -> &AtomicPtr<T> {
+    fn get(&self, pos: usize) -> &AtomicPtr<T> {
         unsafe { transmute((self.block + size_of::<AtomicPtr<T>>() * pos) as *mut AtomicPtr<T>) }
     }
 
@@ -75,10 +77,10 @@ impl<T> PointerCache<T> {
         let old = self.get(pos).swap(new, Ordering::Relaxed);
 
         if old != 0 as *mut T {
-            //println!("replaced {} {:p} over {:p}", pos, new, old);
-            unsafe { deallocate(old as *mut u8, size_of::<T>(), align_of::<T>()); }
-        } else {
-            //println!("push {} {:p}", pos, new);
+            unsafe {
+                zero_memory(old as *mut u8, size_of::<T>());
+                deallocate(old as *mut u8, size_of::<T>(), align_of::<T>()); 
+            }
         }
     }
 }
@@ -105,7 +107,7 @@ struct Item<T> {
 #[unsafe_destructor]
 impl<T> Drop for Queue<T> {
     fn drop(&mut self) {
-        self.forcedealloc();
+        self.deallocall();
     }
 }
 
@@ -133,7 +135,7 @@ impl<T: Send> SafeQueue<T> {
         }
     }
 
-    pub fn len(&self) -> uint {
+    pub fn len(&self) -> usize {
         self.vec.lock().unwrap().len()
     }
 }
@@ -161,16 +163,17 @@ impl<T> Queue<T> {
                     (*item).next.store(0 as *mut Item<T>, Ordering::Relaxed);
                     (*item).prev.store(0 as *mut Item<T>, Ordering::Relaxed);
                     copy_memory(&mut ((*item).payload), transmute(&t), 1);
+                    forget(t);
                     item
                 },
                 Option::None => {
-                    transmute(box Item {
+                    transmute(Box::new(Item {
                         next:       AtomicPtr::new(0 as *mut Item<T>),
                         prev:       AtomicPtr::new(0 as *mut Item<T>),
                         claimed:    AtomicBool::new(false),
                         needrel:    AtomicBool::new(false),
                         payload:    t,
-                    })
+                    }))
                 }
             };
 
@@ -190,7 +193,7 @@ impl<T> Queue<T> {
         }
     }
 
-    pub fn len(&self) -> uint {
+    pub fn len(&self) -> usize {
         self.len.load(Ordering::Relaxed)
     }
 
@@ -228,13 +231,13 @@ impl<T> Queue<T> {
         }
     }
 
-    fn forcedealloc(&self) {
+    fn deallocall(&self) {
         let after = self.ptr.load(Ordering::SeqCst);
-        let mut cnt: uint = 0;
+        let mut cnt: usize = 0;
         self.ptr.store(0 as *mut Item<T>, Ordering::SeqCst);
         self.lst.store(0 as *mut Item<T>, Ordering::SeqCst);
         unsafe {
-            let mut cur = (*after).next.load(Ordering::SeqCst);
+            let mut cur = after;
             while cur != 0 as *mut Item<T> {
                 // Deallocate the memory consumed by this entry.
                 let ncur = (*cur).next.load(Ordering::SeqCst);
@@ -243,7 +246,6 @@ impl<T> Queue<T> {
                 cur = ncur;
                 cnt += 1;
             }
-            (*after).next.store(0 as *mut Item<T>, Ordering::SeqCst);
             self.needrel.fetch_sub(cnt, Ordering::SeqCst);
         }
     }
@@ -287,6 +289,7 @@ impl<T> Queue<T> {
             while cur != 0 as *mut Item<T> {
                 if !(*cur).claimed.compare_and_swap(false, true, Ordering::SeqCst) {
                     self.len.fetch_sub(1, Ordering::Relaxed);
+                    
                     if first {
                         // We want to move the last pointer to the previous, but only
                         // if the previous is not zero.
@@ -297,8 +300,9 @@ impl<T> Queue<T> {
                             self.lst.compare_and_swap(cur, nlst, Ordering::SeqCst);
                         } 
                     }
-                    let payload: T = uninitialized();
-                    copy_memory(transmute(&payload), &mut ((*cur).payload), 1);
+
+                    let mut payload: T = uninitialized();
+                    copy_memory(&mut payload, &mut ((*cur).payload), 1);
                     (*cur).needrel.store(true, Ordering::SeqCst);
                     self.needrel.fetch_add(1, Ordering::SeqCst);
                     self.rinside.fetch_sub(1, Ordering::SeqCst);

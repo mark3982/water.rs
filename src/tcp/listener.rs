@@ -133,10 +133,10 @@ impl TcpBridgeListener {
                         let _stream = stream.clone();
                         let _ep = ep.clone();
                         let _bridge = bridge.clone();
-                        Thread::spawn(move || { thread_rx(Which::Listener(_bridge), _ep, _stream) }).detach();
+                        Thread::spawn(move || { thread_rx(Which::Listener(_bridge), _ep, _stream) });
                         let _sid = net.getserveraddr();
                         let _bridge = bridge.clone();
-                        Thread::spawn(move || { thread_tx(Which::Listener(_bridge), ep, stream, _sid) }).detach();
+                        Thread::spawn(move || { thread_tx(Which::Listener(_bridge), ep, stream, _sid) });
                     }
                     // TODO: make client count decrement on connection lost
                     bridge.clientcountinc();
@@ -158,7 +158,7 @@ impl TcpBridgeListener {
         };
 
         let bclone = b.clone();
-        Thread::spawn(move || { TcpBridgeListener::thread_accept(bclone) }).detach();
+        Thread::spawn(move || { TcpBridgeListener::thread_accept(bclone) });
 
         b
     }

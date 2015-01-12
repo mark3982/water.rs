@@ -76,12 +76,12 @@ fn queuefight_water_run(txcnt: uint, rxcnt: uint, i: uint) {
 
     for id in range(0u, txcnt) {
         let qc = q.clone();
-        threads.push(Thread::spawn(move || tx_thread(id as u64, qc, txcnt, rxcnt, i)));
+        threads.push(Thread::scoped(move || tx_thread(id as u64, qc, txcnt, rxcnt, i)));
     }
 
     for _ in range(0u, rxcnt) {
         let qc = q.clone();
-        threads.push(Thread::spawn(move || rx_thread(qc, txcnt, rxcnt, i)));
+        threads.push(Thread::scoped(move || rx_thread(qc, txcnt, rxcnt, i)));
     }
 
     drop(threads);
@@ -111,12 +111,12 @@ fn queuefight_native_run(txcnt: uint, rxcnt: uint, i: uint) {
 
     for id in range(0u, txcnt) {
         let qc = q.clone();
-        threads.push(Thread::spawn(move || tx_thread(id as u64, qc, txcnt, rxcnt, i)));
+        threads.push(Thread::scoped(move || tx_thread(id as u64, qc, txcnt, rxcnt, i)));
     }
 
     for _ in range(0u, rxcnt) {
         let qc = q.clone();
-        threads.push(Thread::spawn(move || rx_thread(qc, txcnt, rxcnt, i)));
+        threads.push(Thread::scoped(move || rx_thread(qc, txcnt, rxcnt, i)));
     }
 }
 
@@ -155,10 +155,10 @@ unsafe impl<T:Send> Sync for NativeQueue<T> { }
 
 impl<T> Node<T> {
     unsafe fn new(v: Option<T>) -> *mut Node<T> {
-        mem::transmute(box Node {
+        mem::transmute(Box::new(Node {
             next: AtomicPtr::new(0 as *mut Node<T>),
             value: v,
-        })
+        }))
     }
 }
 

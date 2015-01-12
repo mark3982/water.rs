@@ -128,10 +128,11 @@ struct AddressData {
 
 struct Internal {
     stoken:         SleepToken,
-    messages:       SafeQueue<Message>,
+    messages:       Queue<Message>,
     wakeupat:       Mutex<Timespec>,
     memoryused:     AtomicUint,
     net:            Net,
+    dropped:        AtomicBool,
     refcnt:         AtomicUint,
     slpcnt:         AtomicUint,
     limitpending:   AtomicUint,
@@ -165,7 +166,7 @@ unsafe impl Send for Internal { }
 ///     use std::sync::mpsc::channel;
 ///
 ///     // Create a Rust channel.     
-///     let (tx, rx) = channel::<uint>();
+///     let (tx, rx) = channel::<usize>();
 ///
 ///     // Create the equivilent of a Rust channel (but bi-directional).
 ///     let mut net = Net::new(200);
@@ -195,7 +196,7 @@ impl Clone for Endpoint {
     /// duplicate the endpoint, but rather gives you a second handle to access it. This is
     /// a common operation.
     fn clone(&self) -> Endpoint {
-        self.i.refcnt.fetch_add(1, Ordering::SeqCst);
+        self.i.refcnt.fetch_add(1, Ordering::Relaxed);
         Endpoint {
             i:          self.i.clone(),
         }
@@ -209,8 +210,11 @@ impl Clone for Endpoint {
 /// be truly dropped and deallocated with out manual intervention.
 impl Drop for Endpoint {
     fn drop(&mut self) {
-        let refcnt = self.i.refcnt.fetch_sub(1, Ordering::SeqCst) - 1;
-        if refcnt == 1 {
+        let refcnt = self.i.refcnt.fetch_sub(1, Ordering::Acquire) - 1;
+        // When we call into `drop_endpoint` a clone could happen on another thread. The drop
+        // that will happen from net could then cause `drop_endpoint` to be called again which
+        // would form a deadlock since at the moment `drop_endpoint` is not re-entrant.
+        if refcnt == 1 && !self.i.dropped.compare_and_swap(false, true, Ordering::SeqCst) {
             self.i.net.drop_endpoint(self);
         }
     }
@@ -264,8 +268,12 @@ impl Endpoint {
     /// Return the unique identifier for this endpoint. This will
     /// be unique except across process boundaries. This is the
     /// actual memory address of the internal structure.
-    pub fn id(&self) -> uint {
-        unsafe { transmute(&*self.i) }
+    pub fn id(&self) -> usize {
+        unsafe { transmute(&(*self.i)) }
+    }
+
+    pub fn getrefcnt(&self) -> usize {
+        self.i.refcnt.load(Ordering::Relaxed)
     }
 
     /// Create a new endpoint by specifying the system ID, endpoint ID, and the
@@ -273,7 +281,7 @@ impl Endpoint {
     pub fn new(sid: u64, eid: u64, net: Net) -> Endpoint {
         Endpoint {
             i:  Arc::new(Internal {
-                messages:       SafeQueue::new(),
+                messages:       Queue::new(),
                 stoken:         SleepToken::new(),
                 wakeupat:       Mutex::new(Timespec { nsec: 0i32, sec: 0x7fffffffffffffffi64 }),
                 limitpending:   AtomicUint::new(0),
@@ -287,6 +295,7 @@ impl Endpoint {
                 net:            net,
                 refcnt:         AtomicUint::new(1),
                 slpcnt:         AtomicUint::new(0),
+                dropped:        AtomicBool::new(false),
             }),
         }
     }
@@ -297,7 +306,7 @@ impl Endpoint {
         *self.i.wakeupat.lock().unwrap()
     }
 
-    pub fn getpeercount(&self) -> uint {
+    pub fn getpeercount(&self) -> usize {
         self.i.net.getepcount()
     }
 
@@ -375,7 +384,7 @@ impl Endpoint {
     /// it may account for a thread which has actually just been woken up. There is
     /// a number of instructions to be executed from wake up until the thread updates
     /// this to show it is not sleeping therefore it may not be accurate._
-    pub fn sleepercount(&self) -> uint {
+    pub fn sleepercount(&self) -> usize {
         self.i.slpcnt.load(Ordering::Relaxed)
     }
 
@@ -396,12 +405,12 @@ impl Endpoint {
     }
 
     /// Sets the limit for pending messages in the queue.
-    pub fn setlimitpending(&mut self, limit: uint) {
+    pub fn setlimitpending(&mut self, limit: usize) {
         self.i.limitpending.store(limit, Ordering::Relaxed);
     }
 
     /// Sets the maximum amount of memory messages in the queue may consume.
-    pub fn setlimitmemory(&mut self, limit: uint) {
+    pub fn setlimitmemory(&mut self, limit: usize) {
         self.i.limitmemory.store(limit, Ordering::Relaxed);
     }
 
@@ -438,14 +447,14 @@ impl Endpoint {
     /// Send a message, but leave from address fields alone.
     ///
     /// _If sync type use `syncsync` or `sendsyncx`._
-    pub fn sendx(&self, msg: Message) -> uint {
+    pub fn sendx(&self, msg: Message) -> usize {
         self.i.net.send(msg)
     }
 
     /// Send a message, but mutates message from address fields with correct return address.
     ///
     /// _If sync type use `sendsync` or `sendsyncx`._
-    pub fn send(&self, msg: Message) -> uint {
+    pub fn send(&self, msg: Message) -> usize {
         let lock = self.i.address.lock().unwrap();
         let sid = lock.sid;
         let eid = lock.eid;
@@ -460,7 +469,7 @@ impl Endpoint {
     ///
     /// This is a helper function to make sending easier
     /// and code cleaner looking.
-    pub fn sendsynctype<T: Send>(&self, t: T) -> uint {
+    pub fn sendsynctype<T: Send>(&self, t: T) -> usize {
         let mut msg = Message::new_sync(t);
         msg.dstsid = 1; // only local net
         msg.dsteid = 0; // everyone
@@ -474,7 +483,7 @@ impl Endpoint {
     ///
     /// This is a helper function to make sending easier
     /// and code cleaner looking.
-    pub fn sendclonetype<T: Send + Clone>(&self, t: T) -> uint {
+    pub fn sendclonetype<T: Send + Clone>(&self, t: T) -> usize {
         let mut msg = Message::new_clone(t);
         msg.dstsid = 1; // only local net
         msg.dsteid = 0; // everyone
@@ -505,7 +514,7 @@ impl Endpoint {
     ///     if result.is_err() { 
     ///         println!("no message");
     ///     } else {
-    ///         println!("got message [{}]", result.ok().typeunwrap::<uint>());
+    ///         println!("got message [{}]", result.ok().typeunwrap::<usize>());
     ///     }
     /// 
     /// See `Message` for API dealing with messages.

@@ -134,7 +134,7 @@ impl Net {
     }
 
     /// Return the number of endpoints on this net.
-    pub fn getepcount(&self) -> uint {
+    pub fn getepcount(&self) -> usize {
         self.i.lock().unwrap().endpoints.len()
     }
 
@@ -191,14 +191,14 @@ impl Net {
     } 
 
     /// Send message with specified from addresses.
-    pub fn sendas(&self, mut msg: Message, fromsid: ID, fromeid: ID) -> uint {
+    pub fn sendas(&self, mut msg: Message, fromsid: ID, fromeid: ID) -> usize {
         msg.srcsid = fromsid;
         msg.srceid = fromeid;
         self.send(msg)
     }
 
     /// Send message.
-    pub fn send(&self, msg: Message) -> uint {
+    pub fn send(&self, msg: Message) -> usize {
         if msg.is_raw() {
             // Duplicate it to not share the buffer with the sender.
             self.send_internal(msg.dup())
@@ -209,8 +209,8 @@ impl Net {
 
     // Try to give the message to all endpoints. The endpoints do the logic
     // to determine if they will recieve the message.
-    fn send_internal(&self, msg: Message) -> uint {
-        let mut ocnt = 0u;
+    fn send_internal(&self, msg: Message) -> usize {
+        let mut ocnt = 0us;
 
         // Just to be safe I only want to call immutable methods
         // on endpoints since we are not locking and as long as
@@ -274,15 +274,24 @@ impl Net {
     pub fn drop_endpoint(&self, thisep: &Endpoint) {
         let mut lock = self.i.lock().unwrap();
         let endpoints = &mut lock.endpoints;
-
-        for i in range(0u, endpoints.len()) {
+        let mut ndx = 0us;
+        let mut fnd = false;
+        for i in range(0us, endpoints.len()) {
             if endpoints[i].id() == thisep.id() {
                 // The drop method of Endpoint likely called this method
                 // so hopefully it is capable of handling a nested call
                 // back into it's self.
-                endpoints.remove(i);
-                return;
+                ndx = i;
+                if fnd {
+                    panic!("multiple ep with same id");
+                }
+                fnd = true;
             }
+        }
+
+        if fnd {
+            //println!("thread:{} drop_endpoint thisep:{:x} refcnt:{}", Thread::current().name().unwrap_or("none"), thisep.id(), thisep.getrefcnt());
+            endpoints.remove(ndx);
         }
     }
 

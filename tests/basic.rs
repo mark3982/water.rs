@@ -14,6 +14,7 @@ use std::thread::Thread;
 use time::Timespec;
 use std::io::timer::sleep;
 use std::time::duration::Duration;
+use time::get_time;
 
 // A safe structure is one that has no pointers and uses only primitive
 // types or types that are known to have primitive fields such as static
@@ -70,8 +71,15 @@ fn funnyworker(mut net: Net, dbgid: uint) {
         }
     }
 
+    let st = get_time();
+
     while recvmsgcnt < limit * (THREADCNT - 1) || sentmsgcnt < limit {
         // Read anything we can.
+        let ct = get_time();
+        let dt = ct - st;
+        if dt.num_seconds() > 4 {
+            println!("thread timeout!");
+        }
         loop { 
             //println!("thread[{}] recving", dbgid);
             //let result = ep.recvorblock(Timespec { sec: 0, nsec: 1000000 });
@@ -120,7 +128,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     //let mut msgtosend = Message::new_raw(32);
     //msgtosend.dstsid = 0;
     //msgtosend.dsteid = 0;
-
+    println!("thread[{}] trying to exit", dbgid);
     let safestruct = SafeStructure {
         a:  dbgid as u64,
         b:  0x00,
@@ -189,7 +197,8 @@ fn _basicio() {
     for i in range(0, THREADCNT) {
         let netclone = net.clone();
         //println!("creating thread {}", i);
-        threads.push(Thread::spawn(move || { funnyworker(netclone, i); }));
+        //threads.push(Thread::new(Option::Some(format!("{}", i))).scoped(move |&:| { funnyworker(netclone, i); }));
+        threads.push(Thread::scoped(move || { funnyworker(netclone, i); }));
     }
 
     let mut sectowait = 6i64;

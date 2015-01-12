@@ -1,4 +1,5 @@
 #![feature(unsafe_destructor)]
+#![allow(unstable)]
 #![allow(unused_imports)]
 #![allow(dead_code)]
 #![allow(unused_variables)]

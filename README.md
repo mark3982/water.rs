@@ -77,5 +77,4 @@ For more examples check out the `tests` directory in the source tree! Each test 
 Documentation
 ===
 
-You can find some documentation hosted at, http://kmcg3413.net/water.rs/doc/ . This should be kept up to date
-with the master branch and the https://crates.io/water repository. You should also be able to generate documentation locally by cloning this repository and then doing `rustdoc ./src/lib.rs` which will create a doc sub-directory containing the HTML documentation.
+You can find some documentation hosted at, http://kmcg3413.net/water.rs/doc/lib/ . This should be kept up to date with the master branch and the https://crates.io/water repository. You should also be able to generate documentation locally by cloning this repository and then doing `rustdoc ./src/lib.rs` which will create a doc sub-directory containing the HTML documentation.

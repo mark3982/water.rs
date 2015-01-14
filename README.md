@@ -26,6 +26,7 @@ Some advantages over channels:
  * has no compiler dependancies (pure rust)
  * builtin network communication support using bridges
  * injection of messages back into endpoint (you can send a message to be recieved by the same endpoint)
+ * can wait on multiple endpoints/channels
 
 Some disadvantages:
 
@@ -95,27 +96,6 @@ A channel is typed to a specific message type although you can use enums to send
     } 
 
 _A `size_of::<Foo>()` will return 4097 bytes, which includes the extra byte used to determine the type of the enum._
-
-Performance
-===
-
-Due to the differences in how Water works compared to Rust channels and considered the different designs comparing performnce between the two is similar to the saying of comparing apples to oranges. Water was build with a ethernet
-like network in mind supporting multiple endpoints all with a complex addressing with the ability to bridge to other network scheme where Rust channels were built with a multiple sender single reader or single sender and single reader.
-
-
-I tried to test them as well as I could but it seems that the the performance is fairly matched, however as you start alternating zero byte messages with larger size messages Water will begin to pull ahead because of the decreased memory bandwidth usage of Water compared to Rust channels. The tests below were performing with each implementation doing a ping pong type communication where a ping was a zero byte type and a pong was a multi-byte size. The multi-byte size is specified in the `size` column.
-
-    size        water (fast factor)
-     1B         0.9                     // one byte
-    .2KB        0.9                     // 256 bytes
-    .5KB        1.0                     // 512 bytes
-     1KB        1.0                     // 1024 bytes
-     8KB        1.1
-    16KB        1.8
-    32KB        2.1                
-    64KB        2.1        
-
-_The tests even when running a large number of iterations showed variation but fairly stable results. As I decreased the size to zero byte transfers the native Rust channels was about ten microseconds faster roughly per iteration. This is a great outcome which shows that you can essentially get the power of Water with no significant cost to performance. Doing benchmarking is hard because little variations can cause big changes in timing. I did my best to get these numbers. I hope they represent a fairly accurate picture._
 
 Network Bridge Types Supported
 ===

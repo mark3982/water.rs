@@ -6,7 +6,7 @@ extern crate water;
 use std::sync::Arc;
 use std::mem::transmute_copy;
 
-use water::Queue;
+use water::SizedRingQueue;
 use water::get_time;
 use water::Timespec;
 use water::timespec::add;
@@ -28,10 +28,10 @@ fn mpscqueue() {
 
 fn mpscqueue_run(m: uint, n: uint) {
     fn run_pair(n: uint) {
-        let q: Queue<u64> = Queue::new();
-        let q1: &mut Queue<u64> = unsafe { transmute_copy(&&q) };
-        let q2: &mut Queue<u64> = unsafe { transmute_copy(&&q) };
-        let q3: &mut Queue<u64> = unsafe { transmute_copy(&&q) };
+        let q: SizedRingQueue<u64> = SizedRingQueue::new(10);
+        let q1: &mut SizedRingQueue<u64> = unsafe { transmute_copy(&&q) };
+        let q2: &mut SizedRingQueue<u64> = unsafe { transmute_copy(&&q) };
+        let q3: &mut SizedRingQueue<u64> = unsafe { transmute_copy(&&q) };
 
         println!("-----");
 

@@ -23,8 +23,8 @@ use std::mem::transmute;
 use std::mem::transmute_copy;
 use std::thread::Thread;
 
-use Queue;
 use SafeQueue;
+use SizedRingQueue;
 
 use time::Timespec;
 use time::get_time;
@@ -40,6 +40,8 @@ use net::UNUSED_ID;
 use rawmessage::RawMessage;
 use message::Message;
 use message::MessagePayload;
+
+type Queue<T> = SafeQueue<T>;
  
 /// This represents the exact failure code of the operation.
 pub enum IoErrorCode {
@@ -128,7 +130,7 @@ struct AddressData {
 
 struct Internal {
     stoken:         SleepToken,
-    messages:       Queue<Message>,
+    messages:       SafeQueue<Message>,
     wakeupat:       Mutex<Timespec>,
     memoryused:     AtomicUint,
     net:            Net,
@@ -161,8 +163,9 @@ unsafe impl Send for Internal { }
 /// 
 ///     #![allow(unused_results)]
 ///     #![allow(unused_must_use)]
+///     #![allow(unstable)]
 ///     use water::Net;
-///     use water::Timespec;
+///     use water::Duration;
 ///     use std::sync::mpsc::channel;
 ///
 ///     // Create a Rust channel.     
@@ -174,11 +177,11 @@ unsafe impl Send for Internal { }
 ///     let mut ep2 = net.new_endpoint();
 //
 ///     // Here we send and recv using water.
-///     ep1.sendclonetype(3u);
-///     ep2.recvorblock( Timespec { sec: 9999i64, nsec: 0i32 } );
+///     ep1.sendclonetype(3us);
+///     ep2.recvorblock(Duration::seconds(9));
 ///
 ///     // Here we send and recv using Rust channels.
-///     tx.send(3u);
+///     tx.send(3us);
 ///     rx.recv();
 ///
 /// As you can see it would be fairly easy to create a helper function to make creation of
@@ -281,7 +284,7 @@ impl Endpoint {
     pub fn new(sid: u64, eid: u64, net: Net) -> Endpoint {
         Endpoint {
             i:  Arc::new(Internal {
-                messages:       Queue::new(),
+                messages:       SafeQueue::new(10),
                 stoken:         SleepToken::new(),
                 wakeupat:       Mutex::new(Timespec { nsec: 0i32, sec: 0x7fffffffffffffffi64 }),
                 limitpending:   AtomicUint::new(0),
@@ -503,14 +506,15 @@ impl Endpoint {
 
     /// Recieve a message or block until the specified duration expires then return an error condition.
     /// 
+    ///     #![allow(unstable)]
     ///     use water::Net;
-    ///     use water::Timespec;
+    ///     use water::Duration;
     ///
     ///     let mut net = Net::new(123);
     ///     let mut ep1 = net.new_endpoint();
     ///     let mut ep2 = net.new_endpoint();
     ///     ep2.sendclonetype(3u);             
-    ///     let result = ep1.recvorblock( Timespec { sec: 5i64, nsec: 0i32 } );
+    ///     let result = ep1.recvorblock(Duration::seconds(5));
     ///     if result.is_err() { 
     ///         println!("no message");
     ///     } else {
@@ -518,54 +522,77 @@ impl Endpoint {
     ///     }
     /// 
     /// See `Message` for API dealing with messages.
-    pub fn recvorblock(&self, duration: Timespec) -> IoResult<Message> {
+    pub fn recvorblock(&self, duration: Duration) -> IoResult<Message> {
         let mut when: Timespec = get_time();
-        when = timespec::add(when, duration);
+        when = when + duration;
 
-        //i.wakeinprogress = false;
-        while self.i.messages.len() < 1 {
-            // The wakeup thread will wake everyone up at or beyond
-            // this specified time. Then anyone who needs to sleep
-            // longer will go through this process again of setting
-            // the time to the soonest needed wakeup.
-            //if i.wakeupat > when {
-            //    i.wakeupat = when;
-            //}
+        loop {
+            let result = self.i.recv();
+            if result.is_ok() {
+                return result;
+            }
 
-            //i.slpcnt.fetch_add(1, Ordering::SeqCst);
-            //i.slpcnt.fetch_sub(1, Ordering::SeqCst);
-
-            //let cwaker: &Condvar = unsafe { transmute(&i.cwaker) };
-            //println!("check {:p} with {:p}", cwaker, &i.cwaker);
-            //i = cwaker.wait(i).unwrap();
             Thread::yield_now();
-            
-            //println!("ep.id:{:p} woke", &*i);
-            //i.wakeinprogress = false;
 
             let ctime: Timespec = get_time();
-            if ctime > when && self.i.messages.len() < 1 {
-                //println!("{:p} NO MESSAGES", &*i);
-                // BugFix: Allow any other sleeping threads which will
-                // wake once we unlock this mutex to set their
-                // wake time. 
-                self.i.neverwakeme();
+            if ctime > when {
                 return IoResult::Err(IoError { code: IoErrorCode::TimedOut });
             }
         }
-
-        // If another thread was sleeping too it will wake
-        // after we return and it will set the wake value
-        // if it is sooner than this or any value set after
-        // this. Any other threads will wake as soon as `i`
-        // which is the mutex guard gets dropped.
-        self.i.neverwakeme();
-
-        self.i.recv()
     }
     
     /// Recieve a message with out blocking and return an error condition if none.
     pub fn recv(&self) -> IoResult<Message> {
         self.i.recv()
+    }
+}
+
+/// Will not return until it has a valid message or a critical errored occures.
+///
+/// _This function can wait on multiple endpoints._
+pub fn recvorblockforever(list: &Vec<Endpoint>) -> IoResult<Message> {
+    loop {
+        let result = recv(list);
+
+        if result.is_ok() {
+            return result;
+        }
+
+        Thread::yield_now();
+    }
+}
+
+/// Return immediantly if not message can be received.
+///
+/// _This function can wait on multiple endpoints._
+pub fn recv(list: &Vec<Endpoint>) -> IoResult<Message> {
+    for ep in list.iter() {
+        let result = ep.i.recv();
+        if result.is_ok() {
+            return result;
+        }
+    }
+
+    IoResult::Err(IoError { code: IoErrorCode::NoMessages })
+}
+
+/// Wait the specified duration for a message or return if a message received.
+///
+/// _This function can wait on multiple endpoints._
+pub fn recvorblock(list: &Vec<Endpoint>, duration: Duration) -> IoResult<Message> {
+    let when: Timespec = get_time() + duration;
+
+    loop {
+        let result = recv(list);
+
+        if result.is_ok() {
+            return result;
+        }
+
+        if get_time() > when {
+            return IoResult::Err(IoError { code: IoErrorCode::TimedOut });
+        }
+
+        Thread::yield_now();
     }
 }

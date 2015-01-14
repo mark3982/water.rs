@@ -55,9 +55,11 @@ pub use tcp::TcpBridgeListener;
 pub use time::get_time;
 /// Specifies a fairly accurate time.
 pub use time::Timespec;
+pub use std::time::duration::Duration;
 ///
-pub use queue::Queue;
 pub use queue::SafeQueue;
+pub use queue::SizedRingQueue;
+pub use queue::InfiniteLinkQueue;
 
 /// Provides some utility functions for a `Timespec`.
 pub mod timespec;

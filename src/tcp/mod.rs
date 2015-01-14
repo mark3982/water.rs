@@ -10,6 +10,7 @@ use rawmessage::RawMessage;
 use net::ID;
 use net::UNUSED_ID;
 use time::Timespec;
+use Duration;
 
 pub mod listener;
 pub mod connector;
@@ -104,7 +105,7 @@ pub fn thread_tx(mut which: Which<TcpBridgeListener, TcpBridgeConnector>, mut ep
     stream.write_be_u64(sid);
 
     loop {
-        let result = ep.recvorblock(Timespec { sec: 900i64, nsec: 0i32 });
+        let result = ep.recvorblock(Duration::seconds(900));
 
         if result.is_err() {
             continue;

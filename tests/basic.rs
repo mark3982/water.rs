@@ -8,12 +8,11 @@ use water::Endpoint;
 use water::RawMessage;
 use water::NoPointers;
 use water::Message;
+use water::Duration;
 
 use std::thread::JoinGuard;
 use std::thread::Thread;
-use time::Timespec;
 use std::io::timer::sleep;
-use std::time::duration::Duration;
 use time::get_time;
 
 // A safe structure is one that has no pointers and uses only primitive
@@ -78,11 +77,11 @@ fn funnyworker(mut net: Net, dbgid: uint) {
         let ct = get_time();
         let dt = ct - st;
         if dt.num_seconds() > 4 {
-            println!("thread timeout!");
+            panic!("thread timeout!");
         }
         loop { 
             //println!("thread[{}] recving", dbgid);
-            //let result = ep.recvorblock(Timespec { sec: 0, nsec: 1000000 });
+            //let result = ep.recvorblock(Duration::microseconds(1000));
             let result = ep.recv();
 
             if result.is_err() {
@@ -128,7 +127,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     //let mut msgtosend = Message::new_raw(32);
     //msgtosend.dstsid = 0;
     //msgtosend.dsteid = 0;
-    println!("thread[{}] trying to exit", dbgid);
+    //println!("thread[{}] trying to exit", dbgid);
     let safestruct = SafeStructure {
         a:  dbgid as u64,
         b:  0x00,
@@ -137,7 +136,7 @@ fn funnyworker(mut net: Net, dbgid: uint) {
     msgtosend.get_rawmutref().writestructref(0, &safestruct);
     ep.send(msgtosend);
 
-    println!("thread[{}]: exiting", dbgid);
+    //println!("thread[{}]: exiting", dbgid);
 }
 
 #[test]
@@ -201,18 +200,10 @@ fn _basicio() {
         threads.push(Thread::scoped(move || { funnyworker(netclone, i); }));
     }
 
-    let mut sectowait = 6i64;
-
     //println!("main: entering loop with ep.id:{}", ep.id());
 
     loop {
-        let result = ep.recvorblock(Timespec { sec: sectowait, nsec: 0 });
-        //let result = ep.recvorblockforever();
-
-        // It seems we need to wait just a bit I suppose for the threads
-        // to actually get a message sent. Then after that we can read quite
-        // fast.
-        sectowait = 6i64;
+        let result = ep.recvorblock(Duration::seconds(6));
 
         if result.is_err() {
             panic!("timed out waiting for messages likely..");
@@ -227,6 +218,7 @@ fn _basicio() {
             if threadterm[safestruct.a as uint] != 0 {
                 panic!("got termination message from same thread twice!");
             }
+
             threadterm[safestruct.a as uint] = 1;
 
             completedcnt += 1;

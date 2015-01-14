@@ -3,7 +3,7 @@ extern crate time;
 
 use std::sync::mpsc::channel;
 use water::Net;
-use time::Timespec;
+use water::Duration;
 use std::thread::Thread;
 
 struct Foo;
@@ -61,13 +61,13 @@ fn pingpong_water(m: uint, n: uint) {
         let ta = Thread::spawn(move || {
             for _ in range(0, n) {
                 epa.sendsynctype(());
-                epa.recvorblock( Timespec { sec: 9i64, nsec: 0i32 } ).ok();
+                epa.recvorblock(Duration::seconds(9)).ok();
             }
         });
 
         let tb = Thread::spawn(move || {
             for _ in range(0, n) {
-                epb.recvorblock( Timespec { sec: 9i64, nsec: 0i32 } ).ok();
+                epb.recvorblock(Duration::seconds(9)).ok();
                 epb.sendsynctype(());
             }
         });

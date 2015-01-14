@@ -4,7 +4,7 @@ extern crate water;
 use water::Net;
 use water::Endpoint;
 use water::Message;
-use time::Timespec;
+use water::Duration;
 
 #[test]
 fn tcpio() {
@@ -60,7 +60,7 @@ fn tcpio_do() {
     // arrived by the time we make this call. It will block for
     // 900 seconds and return an error if no messages was received.
     println!("waiting for message that was sent");
-    let result = ep2.recvorblock(Timespec { sec: 900i64, nsec: 0i32 });
+    let result = ep2.recvorblock(Duration::seconds(900));
 
     // We need to get the message as a raw type. This will fail if
     // the message is clone or sync type. Then we get a byte slice

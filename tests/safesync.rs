@@ -12,13 +12,12 @@ use water::Endpoint;
 use water::RawMessage;
 use water::NoPointers;
 use water::Message;
+use water::Duration;
 
 use std::thread::Thread;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::io::timer::sleep;
-use std::time::duration::Duration;
-use time::Timespec;
 
 struct Foo {
     a:      uint,
@@ -61,7 +60,7 @@ fn syncio() {
     let eid = ep.geteid();
     let ta = Thread::spawn(move || { funnyworker(netclone, 0, eid); });
 
-    let result = ep.recvorblock(Timespec { sec: 3, nsec: 0 });
+    let result = ep.recvorblock(Duration::seconds(3));
 
     let msg: Arc<Foo> = result.ok().get_sync().get_payload();
 

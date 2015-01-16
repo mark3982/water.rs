@@ -34,6 +34,10 @@
 //! If you are trying to get started you will want to use `Net` and `Endpoint` with maybe `Message`. These
 //! three objects form the core of the library and are used extensively. Although, you will mainly only use
 //! the `Net` object for creating endpoints it still has some functionality like bridges and such.
+//!
+//! The `Net` documentation shown show some basic examples to help you get started!
+//!
+
 extern crate test;
 extern crate time;
 
@@ -50,13 +54,13 @@ pub use syncmessage::SyncMessage;
 pub use clonemessage::CloneMessage;
 pub use tcp::TcpBridgeConnector;
 pub use tcp::TcpBridgeListener;
+pub use net::ID;
 
 /// Gets the current system time.
 pub use time::get_time;
 /// Specifies a fairly accurate time.
 pub use time::Timespec;
 pub use std::time::duration::Duration;
-///
 pub use queue::SafeQueue;
 pub use queue::SizedRingQueue;
 pub use queue::InfiniteLinkQueue;

@@ -1,3 +1,8 @@
+//! Here we implement the Endpoint and IoResult<T> which provide
+//! the core of the water library. These are to be some of the most used
+//! facilities when working with the water library. An endpoint forms
+//! the point of communication with other endpoints.
+
 #![allow(unused_imports)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
@@ -30,9 +35,6 @@ use time::Timespec;
 use time::get_time;
 
 use timespec;
-/// Here we implement and export the Endpoint and IoResult<T> which provide
-/// the core of the water library. These are to be some of the most used
-/// facilities when working with water.
 
 use net::Net;
 use net::ID;
@@ -40,8 +42,6 @@ use net::UNUSED_ID;
 use rawmessage::RawMessage;
 use message::Message;
 use message::MessagePayload;
-
-type Queue<T> = SafeQueue<T>;
  
 /// This represents the exact failure code of the operation.
 pub enum IoErrorCode {
@@ -275,6 +275,13 @@ impl Endpoint {
         unsafe { transmute(&(*self.i)) }
     }
 
+    /// Return the number of references to this endpoint. Also can be known
+    /// as the number of currently valid clones of this endpoint. Once this
+    /// reaches one the endpoint is deallocated.
+    ///
+    /// _This should always return at least the value two since the net instance
+    /// holds a clone and the current instance you are calling this on is considered
+    /// a clone._
     pub fn getrefcnt(&self) -> usize {
         self.i.refcnt.load(Ordering::Relaxed)
     }
@@ -309,6 +316,9 @@ impl Endpoint {
         *self.i.wakeupat.lock().unwrap()
     }
 
+    /// Return the number of endpoints that may receiver this message
+    /// not counting ourself. Any sent message will be evaluated by this
+    /// number of endpoints, but may not be received but by zero or more.
     pub fn getpeercount(&self) -> usize {
         self.i.net.getepcount()
     }
@@ -470,8 +480,8 @@ impl Endpoint {
     /// 
     /// `endpoint.sendsync(Message::new_sync(t))`
     ///
-    /// This is a helper function to make sending easier
-    /// and code cleaner looking.
+    /// _This is a helper function to make sending easier
+    /// and code cleaner looking._
     pub fn sendsynctype<T: Send>(&self, t: T) -> usize {
         let mut msg = Message::new_sync(t);
         msg.dstsid = 1; // only local net
@@ -484,8 +494,8 @@ impl Endpoint {
     /// 
     /// `endpoint.send(&Message::new_sync(t))`
     ///
-    /// This is a helper function to make sending easier
-    /// and code cleaner looking.
+    /// _This is a helper function to make sending easier
+    /// and code cleaner looking._
     pub fn sendclonetype<T: Send + Clone>(&self, t: T) -> usize {
         let mut msg = Message::new_clone(t);
         msg.dstsid = 1; // only local net
@@ -542,6 +552,21 @@ impl Endpoint {
     }
     
     /// Recieve a message with out blocking and return an error condition if none.
+    ///
+    ///     use water::Net;
+    ///     use water::Duration;
+    ///     
+    ///     let mut net = Net::new(123);
+    ///     let mut ep1 = net.new_endpoint();
+    ///     let mut ep2 = net.new_endpoint();
+    ///     ep2.sendclonetype(3u);             
+    ///     let result = ep1.recv();
+    ///     if result.is_err() { 
+    ///         println!("no message");
+    ///     } else {
+    ///         println!("got message [{}]", result.ok().typeunwrap::<usize>());
+    ///     }
+    ///
     pub fn recv(&self) -> IoResult<Message> {
         self.i.recv()
     }

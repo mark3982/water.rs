@@ -73,7 +73,6 @@ _I recommend using Cargo as it makes managing and building dependancies very eas
 
 For more examples check out the `tests` directory in the source tree! Each test will demonstrate different parts of the library and how to use it. I aim to have everything working and compiling on the master branch. If you want bleeding edge you can select the `dev` branch or any other to find less tester but possibly newer features.
 
-
 Documentation
 ===
 

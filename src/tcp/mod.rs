@@ -1,5 +1,12 @@
 #![allow(unused_mut)]
 
+//! This implements the generic bridge components that are used for the
+//! different network transports. By having a generic implementation it
+//! prevent duplication of code and potential of bugs.
+//!
+//! _You will not normally use any of these facilities directly unless
+//! you are building a new bridge._
+
 pub use tcp::listener::TcpBridgeListener;
 pub use tcp::connector::TcpBridgeConnector;
 

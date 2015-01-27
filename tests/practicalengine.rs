@@ -1,3 +1,5 @@
+#![allow(unstable)]
+
 extern crate time;
 extern crate water;
 
@@ -44,7 +46,7 @@ struct Request {
 
 struct Work {
     id:         u64,
-    data:       Vec<u8>,
+    data:       Arc<Vec<u8>>,
     offset:     usize,
     length:     usize,
     tail:       u64,
@@ -168,7 +170,7 @@ fn thread_pipelinemanager(mep: Endpoint, corecnt: usize) {
             let chklen = data.len() / corecnt;
             let slack = data.len() % corecnt;
             let datalen = data.len();
-            //let adata = Arc::new(data);
+            let adata = Arc::new(data);
 
             pending.insert(request.id, WorkPending {
                 epsid:      msg_srcsid,
@@ -182,7 +184,7 @@ fn thread_pipelinemanager(mep: Endpoint, corecnt: usize) {
             for chkndx in range(0us, (corecnt - 1) as usize) {
                 let work = Work {
                     id:     request.id,
-                    data:   data.clone(),
+                    data:   adata.clone(),
                     offset: chkndx * chklen,
                     length: chklen,
                     tail:   0x1234,
@@ -196,7 +198,7 @@ fn thread_pipelinemanager(mep: Endpoint, corecnt: usize) {
             // Throw slack onto last chunk.
             let work = Work {
                 id:     request.id,
-                data:   data,
+                data:   adata,
                 offset: (corecnt - 1) * chklen,
                 length: chklen + slack,
                 tail:   0x1234,
@@ -250,43 +252,49 @@ fn thread_pipelinemanager(mep: Endpoint, corecnt: usize) {
     }
 }
 
-#[test]
-fn practicalengine() {
-    // Create a thread so we can debug using stdout under `cargo test`.
-    std::thread::Thread::scoped(move || {
-        let net = Net::new(100);
-        let mut threads: Vec<JoinGuard<()>> = Vec::new();
+/// Perform a benchmark/test run.
+fn go(reqcnt: usize, mancnt: usize, coreperman: usize, datcnt: usize) {
+    let net = Net::new(100);
+    let mut threads: Vec<JoinGuard<()>> = Vec::new();
 
-        for manid in range(0us, 2us) {
-            let manep = net.new_endpoint_withid((1000 + manid) as ID);
-            let t = Thread::scoped(move || thread_pipelinemanager(manep, 2));
-            threads.push(t);
-        }
+    for manid in range(0us, mancnt) {
+        let manep = net.new_endpoint_withid((1000 + manid) as ID);
+        let t = Thread::scoped(move || thread_pipelinemanager(manep, coreperman));
+        threads.push(t);
+    }
 
-        println!("[main] waiting for threads");
+    while net.getepcount() < mancnt {
+        Thread::yield_now();
+    }
 
-        while net.getepcount() < 1 {
-            Thread::yield_now();
-        }
+    let ep = net.new_endpoint();
 
-        println!("[main] threads started and have endpoint");
-
+    for _ in range(0us, reqcnt) {
         let mut data: Vec<u8> = Vec::new();
-        data.push(1u8);
-        data.push(2u8);
-        data.push(3u8);
-        data.push(4u8);
-        let ep = net.new_endpoint();
+        for _ in range(0us, datcnt) {
+            data.push(1u8);
+        }
         
         ep.sendsynctype(Request {
             id:     0x100u64,
             data:   data,
         });
+    }
 
-        println!("[main] waiting for result");
+    for _ in range(0us, reqcnt) {
         let msg = ep.recvorblockforever().unwrap();
-        
-        println!("[main] telling manager to terminate");
-        ep.sendclonetype(Terminate);
+        println!("[main] got result");
+    }
+
+    println!("[main] telling manager to terminate");
+    ep.sendclonetype(Terminate);
+
+}
+
+#[test]
+fn practicalengine() {
+    // Create a thread so we can debug using stdout under `cargo test`.
+    std::thread::Thread::scoped(move || {
+        go(10, 2, 2, 1024);
     });
 }

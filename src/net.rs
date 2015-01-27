@@ -149,7 +149,7 @@ impl Net {
     ///     let net = Net::new(100);
     ///
     pub fn new(sid: ID) -> Net {
-        let mut net = Net {
+        let net = Net {
             i:  Arc::new(Mutex::new(Internal {
                 endpoints:      Vec::new(),
                 hueid:          0x10000,

@@ -56,6 +56,10 @@ pub use tcp::TcpBridgeConnector;
 pub use tcp::TcpBridgeListener;
 pub use net::ID;
 
+pub use endpoint::recvorblock;
+pub use endpoint::recvorblockforever;
+pub use endpoint::recv;
+
 /// Gets the current system time.
 pub use time::get_time;
 /// Specifies a fairly accurate time.

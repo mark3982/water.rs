@@ -5,9 +5,13 @@ use std::sync::Mutex;
 use std::intrinsics::transmute;
 use std::mem::transmute_copy;
 use std::mem::uninitialized;
+use std::mem::forget;
 use std::intrinsics::copy_memory;
 use std::raw;
 use std::sync::Arc;
+use std::sync::StaticMutex;
+use std::sync::MUTEX_INIT;
+use std::thread::Thread;
 use std;
 
 /// This is used to signify that a type is safe to
@@ -24,8 +28,21 @@ struct Internal {
 
 unsafe impl Send for Internal{}
 
+fn hextype<T>(t: &T) -> String {
+    unsafe {
+        let p: usize = transmute(t);
+        let mut s = String::new();
+        for i in range(0, size_of::<T>()) {
+            s.push_str(format!("{:02x}", *((p + i) as *const u8)).as_slice());
+        }
+        s
+    }
+}
+
 impl Drop for Internal {
     fn drop(&mut self) {
+        let cthread = Thread::current();
+
         unsafe { deallocate(self.buf, self.cap, size_of::<usize>()); }
     }
 }
@@ -41,11 +58,13 @@ impl Internal {
         }
 
         // TODO: do we need to zero out the memory allocates?
-        Internal {
+        let i = Internal {
             len:        cap,
             cap:        cap,
             buf:        unsafe { allocate(cap, size_of::<usize>()) },
-        }
+        };
+
+        i
     }
 
     fn id(&self) -> usize {
@@ -235,12 +254,17 @@ impl RawMessage {
             panic!("write past end of buffer! {}:{}", offset + size_of::<T>(), i.cap);
         }
 
+        if size_of::<T>() == 0 {
+            return;
+        }        
+
         unsafe { copy_memory::<T>((i.buf as usize + offset) as *mut T, transmute(t), 1); }        
     }
 
-    /// Safely write a structure/value by consuming it.
+    /// Safely write a structure/value by consuming it, and _DO NOT_ drop the value.
     pub fn writestruct<T>(&mut self, offset: usize, t: T) {
         self.writestructref(offset, &t);
+        unsafe { forget(t) }; 
     }
 
     /// Read a structure only if it is marked as safe and return the value.

@@ -208,7 +208,8 @@ impl<T: Send> SafeQueue<T> {
     }
 
     pub fn put(&self, t: T) {
-        self.vec.lock().unwrap().push(t)
+        let mut lock = self.vec.lock().unwrap();
+        lock.push(t);
     }
 
     pub fn get(&self) -> Option<T> {

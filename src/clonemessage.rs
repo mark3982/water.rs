@@ -1,7 +1,8 @@
 use RawMessage;
 
 use std::mem::size_of;
-use std::intrinsics::TypeId;
+use std::any::TypeId;
+use std::hash::Hash;
 
 /// A message that can be cloned but not copied, and can be shared with other threads.
 ///
@@ -10,7 +11,7 @@ use std::intrinsics::TypeId;
 /// with threads under the same process as the sender.
 pub struct CloneMessage {
     /// The hash represents the type.
-    pub hash:           u64,
+    pub tyid:           TypeId,
     /// The payload contains the raw type bytes.
     pub payload:        RawMessage,
 }
@@ -20,7 +21,7 @@ impl Clone for CloneMessage {
     /// Will produce a clone but will keep the same payload instance.
     fn clone(&self) -> CloneMessage {
         CloneMessage {
-            hash:       self.hash,
+            tyid:       self.tyid,
             payload:    self.payload.clone(),
         }
     }
@@ -31,7 +32,6 @@ impl CloneMessage {
     /// Create a new clone message from a specific type.
     pub fn new<T: Send + Clone + 'static>(t: T) -> CloneMessage {
         let tyid = TypeId::of::<T>();
-        let hash = tyid.hash();
 
         // Write the structure into a raw message, and
         // consume it in the process making it unsable.
@@ -39,7 +39,7 @@ impl CloneMessage {
         rmsg.writestruct(0, t);
 
         CloneMessage {
-            hash:       hash,
+            tyid:       tyid,
             payload:    rmsg
         }        
     }
@@ -47,9 +47,8 @@ impl CloneMessage {
     /// Check if the clone message contains the type specified. `is_type::<MyType>()`
     pub fn is_type<T: Send + 'static>(&self) -> bool {
         let tyid = TypeId::of::<T>();
-        let hash = tyid.hash();
 
-        if hash != self.hash {
+        if tyid != self.tyid {
             return false;
         }
 
@@ -66,9 +65,8 @@ impl CloneMessage {
         let rawmsg = self.payload;
 
         let tyid = TypeId::of::<T>();
-        let hash = tyid.hash();
 
-        if hash != self.hash {
+        if tyid != self.tyid {
             panic!("clone message was not correct type");
         }
 

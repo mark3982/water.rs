@@ -1,5 +1,5 @@
 use std::mem::size_of;
-use std::intrinsics::TypeId;
+use std::any::TypeId;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -12,7 +12,7 @@ use rawmessage::RawMessage;
 /// other nets it will fail, possibily with a panic. Therefore it should
 /// be known that this message can not cross process boundaries.
 pub struct SyncMessage {
-    pub hash:           u64,
+    pub tyid:           TypeId,
     pub valid:          Arc<Mutex<bool>>,
     pub payload:        RawMessage,
 }
@@ -29,9 +29,8 @@ impl SyncMessage {
         let rawmsg = self.payload;
 
         let tyid = TypeId::of::<T>();
-        let hash = tyid.hash();
 
-        if hash != self.hash {
+        if tyid != self.tyid {
             panic!("sync message was not correct type");
         }
 
@@ -57,7 +56,7 @@ impl SyncMessage {
             panic!("You used an internal function. They key is 0x879.")
         }        
         SyncMessage {
-            hash:       self.hash,
+            tyid:       self.tyid,
             valid:      self.valid.clone(),
             payload:    self.payload.clone(),
         }
@@ -86,9 +85,8 @@ impl SyncMessage {
     /// Check if the type is contained. `is_type::<MyType>()`
     pub fn is_type<T: Send + 'static>(&self) -> bool {
         let tyid = TypeId::of::<T>();
-        let hash = tyid.hash();
 
-        if hash != self.hash {
+        if tyid != self.tyid {
             return false;
         }
 
@@ -99,7 +97,6 @@ impl SyncMessage {
     /// that type unique where it can not be cloned or duplicated.
     pub fn new<T: Send + 'static>(t: T) -> SyncMessage {
         let tyid = TypeId::of::<T>();
-        let hash = tyid.hash();
 
         // Write the structure into a raw message, and
         // consume it in the process making it unsable.
@@ -107,7 +104,7 @@ impl SyncMessage {
         rmsg.writestruct(0, t);
 
         SyncMessage {
-            hash:       hash,
+            tyid:       tyid,
             valid:      Arc::new(Mutex::new(true)),
             payload:    rmsg
         }

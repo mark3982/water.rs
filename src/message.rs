@@ -1,5 +1,5 @@
 use std::mem::size_of;
-use std::intrinsics::TypeId;
+use std::any::TypeId;
 
 use rawmessage::RawMessage;
 use syncmessage::SyncMessage;

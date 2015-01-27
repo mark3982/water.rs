@@ -70,6 +70,9 @@ pub enum IoResult<T> {
 }
 
 impl<T> IoResult<T> {
+    /// Will return the wrapped value consuming the IoResult in the process.
+    ///
+    /// _Will panic if not value._
     pub fn ok(self) -> T {
         match self {
             IoResult::Ok(v) => v,
@@ -77,6 +80,16 @@ impl<T> IoResult<T> {
         }
     }
 
+    /// Will return the wrapped value consuming the IoResult in the process.
+    ///
+    /// _Will panic if not value._
+    pub fn unwrap(self) -> T {
+        self.ok()
+    }
+
+    /// Will return the wrapped error consuming the IoResult in the process.
+    ///
+    /// _Will panic if not error._
     pub fn err(self) -> IoError {
         match self {
             IoResult::Ok(v) => panic!("not `IoResult::Err`!"),
@@ -84,6 +97,7 @@ impl<T> IoResult<T> {
         }
     }
 
+    /// Test if this contains a value and not an error. Will return `true` if contains a value.
     pub fn is_ok(&self) -> bool {
         match *self {
             IoResult::Ok(_) => true,
@@ -91,6 +105,7 @@ impl<T> IoResult<T> {
         }
     }
 
+    /// Test if this contains a error and not a value. Will return `true` if contains a error.
     pub fn is_err(&self) -> bool {
         match *self {
             IoResult::Ok(_) => false,
@@ -130,6 +145,8 @@ struct AddressData {
 
 struct Internal {
     stoken:         SleepToken,
+    waitmutex:      Mutex<bool>,
+    wait:           Condvar,
     messages:       SafeQueue<Message>,
     wakeupat:       Mutex<Timespec>,
     memoryused:     AtomicUint,
@@ -292,6 +309,8 @@ impl Endpoint {
         Endpoint {
             i:  Arc::new(Internal {
                 messages:       SafeQueue::new(10),
+                waitmutex:      Mutex::new(false),
+                wait:           Condvar::new(),
                 stoken:         SleepToken::new(),
                 wakeupat:       Mutex::new(Timespec { nsec: 0i32, sec: 0x7fffffffffffffffi64 }),
                 limitpending:   AtomicUint::new(0),
@@ -324,7 +343,7 @@ impl Endpoint {
     }
 
     /// _(internal usage)_ Give the endpoint a message.
-    pub fn give(&mut self, msg: &Message) -> bool {
+    pub fn give(&self, msg: &Message) -> bool {
         let addr = self.i.address.lock().unwrap();
         let myeid = addr.eid;
         let mysid = addr.sid;
@@ -382,12 +401,17 @@ impl Endpoint {
             cloned = (*msg).clone();
         }
 
-        self.i.messages.put(cloned);
-        //println!("after put");
-        self.i.memoryused.fetch_add(msg.cap(), Ordering::SeqCst);
-        //println!("after msg cap");
+        // Make sure we do not place a message in between a thread
+        // checking and sleeping. By grabbing this lock we ensure
+        // all threads have not yet tried to actually receive or
+        // that they are sleeping waiting to receive.
+        {
+            let recvlock = self.i.waitmutex.lock().unwrap();
+            self.i.messages.put(cloned);
+            self.i.memoryused.fetch_add(msg.cap(), Ordering::SeqCst);
+        }
+        // Wake up any who are waiting to receive.
         self.wakeonewaiter();
-        //println!("returning");
         true
     }
 
@@ -413,17 +437,19 @@ impl Endpoint {
 
     /// Wake one thread waiting on this endpoint.
     pub fn wakeonewaiter(&self) {
-        // Really need this for performance.
-        //self.i.stoken.notify_all();
+        // Really need this for performance. This allows the thread
+        // to sleep while waiting for something to arrive. We wake
+        // up the waiting thread with this call, if there is one.
+        self.i.wait.notify_one();
     }
 
     /// Sets the limit for pending messages in the queue.
-    pub fn setlimitpending(&mut self, limit: usize) {
+    pub fn setlimitpending(&self, limit: usize) {
         self.i.limitpending.store(limit, Ordering::Relaxed);
     }
 
     /// Sets the maximum amount of memory messages in the queue may consume.
-    pub fn setlimitmemory(&mut self, limit: usize) {
+    pub fn setlimitmemory(&self, limit: usize) {
         self.i.limitmemory.store(limit, Ordering::Relaxed);
     }
 
@@ -443,17 +469,17 @@ impl Endpoint {
     }
 
     /// Set the group identifier.
-    pub fn setgid(&mut self, id: ID) {
+    pub fn setgid(&self, id: ID) {
         self.i.address.lock().unwrap().gid = id;
     }
 
     /// Set the system/net identifier.
-    pub fn setsid(&mut self, id: ID) {
+    pub fn setsid(&self, id: ID) {
         self.i.address.lock().unwrap().sid = id;
     }
 
     /// Set the endpoint identifier.
-    pub fn seteid(&mut self, id: ID) {
+    pub fn seteid(&self, id: ID) {
         self.i.address.lock().unwrap().eid = id;
     }
 
@@ -505,12 +531,22 @@ impl Endpoint {
 
     /// Return a message or block forever until one is received.
     pub fn recvorblockforever(&self) -> IoResult<Message> {
+        let mut lock = self.i.waitmutex.lock().unwrap();
+
+        let r = self.i.recv();
+
+        if r.is_ok() {
+            return r;
+        }
+
         loop {
+            lock = self.i.wait.wait(lock).unwrap();
+
             let r = self.i.recv();
+
             if r.is_ok() {
                 return r;
             }
-            Thread::yield_now();
         }
     }
 
@@ -523,7 +559,7 @@ impl Endpoint {
     ///     let mut net = Net::new(123);
     ///     let mut ep1 = net.new_endpoint();
     ///     let mut ep2 = net.new_endpoint();
-    ///     ep2.sendclonetype(3u);             
+    ///     ep2.sendclonetype(3us);             
     ///     let result = ep1.recvorblock(Duration::seconds(5));
     ///     if result.is_err() { 
     ///         println!("no message");
@@ -533,33 +569,39 @@ impl Endpoint {
     /// 
     /// See `Message` for API dealing with messages.
     pub fn recvorblock(&self, duration: Duration) -> IoResult<Message> {
-        let mut when: Timespec = get_time();
-        when = when + duration;
+        let mut lock = self.i.waitmutex.lock().unwrap();
+
+        let result = self.i.recv();
+
+        if result.is_ok() {
+            return result;
+        }
 
         loop {
+            let result = self.i.wait.wait_timeout(lock, duration).unwrap();
+            lock = result.0;
+            let expired = result.1;
+
             let result = self.i.recv();
             if result.is_ok() {
                 return result;
             }
 
-            Thread::yield_now();
-
-            let ctime: Timespec = get_time();
-            if ctime > when {
-                return IoResult::Err(IoError { code: IoErrorCode::TimedOut });
-            }
+            // The wait timed out, therefore, let us exit.
+            if !expired {
+                return IoResult::Err(IoError { code: IoErrorCode::TimedOut });             
+            }            
         }
     }
     
     /// Recieve a message with out blocking and return an error condition if none.
     ///
     ///     use water::Net;
-    ///     use water::Duration;
     ///     
     ///     let mut net = Net::new(123);
     ///     let mut ep1 = net.new_endpoint();
     ///     let mut ep2 = net.new_endpoint();
-    ///     ep2.sendclonetype(3u);             
+    ///     ep2.sendclonetype(3us);             
     ///     let result = ep1.recv();
     ///     if result.is_err() { 
     ///         println!("no message");
@@ -575,6 +617,22 @@ impl Endpoint {
 /// Will not return until it has a valid message or a critical errored occures.
 ///
 /// _This function can wait on multiple endpoints._
+///
+///     #![allow(unstable)]
+///     // Needed by the commented out line further below.
+///     //use water;
+///     use water::Endpoint;
+///     use water::Net;
+///     use std::vec::Vec;
+///
+///     let net = Net::new(100);
+///     let mut epset: Vec<Endpoint> = Vec::new();
+///     let ep = net.new_endpoint();     
+///
+///     epset.push(ep);
+///     // This is commented to prevent doc testing from being stuck in an infinite loop.
+///     //water::recvorblockforever(&Vec::<Endpoint>::new());
+///
 pub fn recvorblockforever(list: &Vec<Endpoint>) -> IoResult<Message> {
     loop {
         let result = recv(list);
@@ -590,6 +648,20 @@ pub fn recvorblockforever(list: &Vec<Endpoint>) -> IoResult<Message> {
 /// Return immediantly if not message can be received.
 ///
 /// _This function can wait on multiple endpoints._
+///
+///     #![allow(unstable)]
+///     use water;
+///     use water::Endpoint;
+///     use water::Net;
+///     use std::vec::Vec;
+///
+///     let net = Net::new(100);
+///     let mut epset: Vec<Endpoint> = Vec::new();
+///     let ep = net.new_endpoint();     
+///
+///     epset.push(ep);
+///     water::recv(&Vec::<Endpoint>::new());
+///
 pub fn recv(list: &Vec<Endpoint>) -> IoResult<Message> {
     for ep in list.iter() {
         let result = ep.i.recv();
@@ -604,6 +676,21 @@ pub fn recv(list: &Vec<Endpoint>) -> IoResult<Message> {
 /// Wait the specified duration for a message or return if a message received.
 ///
 /// _This function can wait on multiple endpoints._
+///
+///     #![allow(unstable)]
+///     use water;
+///     use water::Duration;
+///     use water::Endpoint;
+///     use water::Net;
+///     use std::vec::Vec;
+///
+///     let net = Net::new(100);
+///     let mut epset: Vec<Endpoint> = Vec::new();
+///     let ep = net.new_endpoint();     
+///
+///     epset.push(ep);
+///     water::recvorblock(&Vec::<Endpoint>::new(), Duration::seconds(0));
+///
 pub fn recvorblock(list: &Vec<Endpoint>, duration: Duration) -> IoResult<Message> {
     let when: Timespec = get_time() + duration;
 

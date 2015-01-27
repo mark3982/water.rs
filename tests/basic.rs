@@ -168,9 +168,8 @@ fn basicio() {
     // it once.
     for _ in range(0u, 100u) {
         //println!("making test");
-        //let t = Thread::spawn(move || { _basicio(); });
-        //t.join();
-        _basicio();
+        let t = Thread::scoped(move || { _basicio(); });
+        //_basicio();
     }
 }
 
@@ -203,7 +202,7 @@ fn _basicio() {
     //println!("main: entering loop with ep.id:{}", ep.id());
 
     loop {
-        let result = ep.recvorblock(Duration::seconds(6));
+        let result = ep.recvorblock(Duration::seconds(1));
 
         if result.is_err() {
             panic!("timed out waiting for messages likely..");
@@ -227,7 +226,6 @@ fn _basicio() {
                 break;
             }
         }
-        println!("got msg");
     }
     //println!("done");
 }
